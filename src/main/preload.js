@@ -1,5 +1,30 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
+function injectUxPatch() {
+  const inject = () => {
+    if (!document.head || !document.body || document.documentElement.dataset.uxPatchInjected) return;
+    document.documentElement.dataset.uxPatchInjected = "true";
+
+    const css = document.createElement("link");
+    css.rel = "stylesheet";
+    css.href = "./ux-dashboard-patch.css";
+    document.head.appendChild(css);
+
+    const js = document.createElement("script");
+    js.src = "./ux-dashboard-patch.js";
+    js.defer = true;
+    document.body.appendChild(js);
+  };
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", inject, { once: true });
+  } else {
+    inject();
+  }
+}
+
+injectUxPatch();
+
 contextBridge.exposeInMainWorld("artBank", {
   getConfig: () => ipcRenderer.invoke("config:get"),
   saveConfig: (config) => ipcRenderer.invoke("config:save", config),
