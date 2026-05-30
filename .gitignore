@@ -1,12 +1,10 @@
 # Dependencies
 node_modules/
 
-# Runtime/cache/local user data
-runtime/
+# Logs outside tracked runtime snapshots
 *.log
 
-# Secrets and OAuth tokens
-credentials.json
+# OAuth tokens and environment files
 token.json
 *.credentials.json
 *.secret.json
@@ -17,4 +15,3 @@ token.json
 *.lnk
 Thumbs.db
 .DS_Store
-

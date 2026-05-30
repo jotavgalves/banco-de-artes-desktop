@@ -1,0 +1,70 @@
+{
+  "baseSpreadsheetName": "Base de dados",
+  "baseSpreadsheetId": "1OR_S-GXW6PObsgk-9ylMlLO_3AZi3KQjXc50oRMyAu8",
+  "operationalSpreadsheetId": "1j9uZpE5AQdQNn36AEb8BDJu_kNjBwUM9VRpYUstKnio",
+  "operatorName": "Operador",
+  "credentialsPath": "",
+  "fixedDataFolder": "C:\\BancoDeArtes",
+  "panel50SourceRoot": "X:\\FESTAS E EVENTOS\\PAINEIS MARCKETPLACE\\SKUPR50 - PAINEIS REDONDOS 50 X 50\\SKUPR50 - IMPRESSÃO",
+  "panel50LastInputFolder": "X:\\FESTAS E EVENTOS\\PAINEIS MARCKETPLACE\\SKUPR50 - PAINEIS REDONDOS 50 X 50\\SKUPR50 - IMPRESSÃO\\SKU - ATESTE",
+  "panel50OrganizedRoot": "X:\\1 - TEMAS ORGANIZADOS",
+  "panel50DriveLocalRoot": "X:\\2 - DRIVE",
+  "panel50MockupPath": "",
+  "financialClientRoot": "Z:\\2 - ARMAZEM FESTAS E EVENTOS",
+  "sessionTimeoutMinutes": 10,
+  "reservationTtlMinutes": 5,
+  "cadastroSheetName": "Página1",
+  "operationalLogsSheetName": "LOGS",
+  "driveFolderName": "BANCO DE ARTES",
+  "localImageFolders": [
+    "X:\\FESTAS E EVENTOS\\PAINEIS MARCKETPLACE\\SKUPR50 - PAINEIS REDONDOS 50 X 50\\SKUPR50 - IMPRESSÃO\\SKU - LILO E STITCH"
+  ],
+  "acceptedExtensions": [
+    ".jpg",
+    ".jpeg",
+    ".jpe",
+    ".png",
+    ".webp",
+    ".tif",
+    ".tiff"
+  ],
+  "maintenanceMode": false,
+  "publicDriveUploads": true,
+  "allowManualBatch": true,
+  "validProducts": [
+    "PAINEL",
+    "CENARIO",
+    "KIT",
+    "ROMANO",
+    "RETANGULO",
+    "KIT MAIS ROMANO",
+    "PAINEL REDONDO"
+  ],
+  "productSizes": {
+    "PAINEL REDONDO": [
+      "50X50"
+    ],
+    "PAINEL": [
+      "50X50",
+      "150X150"
+    ],
+    "CENARIO": [
+      "150X360",
+      "2X1"
+    ],
+    "KIT": [
+      "PADRÃO"
+    ],
+    "ROMANO": [
+      "150X360",
+      "2X1"
+    ],
+    "RETANGULO": [
+      "150X360",
+      "2X1"
+    ],
+    "KIT MAIS ROMANO": [
+      "PADRÃO"
+    ]
+  }
+}
