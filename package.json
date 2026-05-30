@@ -1,0 +1,14 @@
+{
+  "name": "banco-de-artes-desktop",
+  "version": "0.1.0",
+  "description": "Aplicativo desktop para cadastro e gestao de artes.",
+  "main": "src/main/main.js",
+  "scripts": {
+    "start": "node_modules\\electron\\dist\\electron.exe --no-sandbox --disable-gpu --disable-http-cache --disable-features=NetworkServiceSandbox .",
+    "check": "node scripts/check.js"
+  },
+  "dependencies": {
+    "electron": "^31.7.7",
+    "googleapis": "^144.0.0"
+  }
+}

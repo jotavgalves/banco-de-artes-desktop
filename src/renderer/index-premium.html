@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+
+<html data-theme="dark" lang="pt-BR">
+<head>
+<meta charset="utf-8"/>
+<meta content="default-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://fonts.gstatic.com; img-src 'self' data: file: https:; connect-src 'self' https:;" http-equiv="Content-Security-Policy"/>
+<title>Banco de Artes Pro</title>
+<!-- Premium Fonts -->
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;family=Sora:wght@600;700;800&amp;family=JetBrains+Mono:wght@500;600&amp;display=swap" rel="stylesheet"/>
+<link href="./styles-premium.css" rel="stylesheet"/>
+</head>
+<body>
+<!-- ═══ LOGIN SCREEN ═══ -->
+<div class="login-screen" id="loginScreen">
+<div class="login-art">
+<div class="brand-lockup">
+<div class="brand-mark">BA</div>
+<div>
+<strong>Banco de Artes</strong>
+<span>Asset Command</span>
+</div>
+</div>
+<h1 id="loginHeadline">Banco visual,<br/>produção sob controle.</h1>
+<p id="loginPhrase">Uma central premium para cadastrar, revisar, encontrar e publicar artes com ID seguro, Drive, planilha e histórico operacional.</p>
+<div class="login-points">
+<span>ID seguro</span>
+<span>Preview visual</span>
+<span>Drive + Sheets</span>
+<span>Auditoria viva</span></div>
+</div>
+<div class="login-panel">
+<p class="eyebrow" id="loginModeLabel">Acesso</p>
+<h2 id="loginTitle">Entrar no sistema</h2>
+<p class="muted" id="loginHelp">Insira suas credenciais.</p>
+<div class="first-access-card" id="firstAccessCard">
+<strong>Primeiro acesso</strong>
+<span>Crie o administrador inicial. Depois disso, esta área some e o sistema passa a exigir login interno.</span>
+</div>
+<form id="loginForm" style="margin-top:24px;display:flex;flex-direction:column;gap:12px;">
+<label>Login<input autocapitalize="none" autocomplete="username" name="login" required=""/></label>
+<label id="adminNameField" style="display:none">Nome Completo<input name="name"/></label>
+<label>Senha<input name="password" required="" type="password"/></label>
+<button class="primary-button wide" id="loginSubmit" style="margin-top:8px" type="submit">
+<svg style="width:16px;height:16px;fill:currentColor;margin-right:8px" viewBox="0 0 24 24"><path d="M10.09 15.59L11.5 17l5-5-5-5-1.41 1.41L12.67 11H3v2h9.67l-2.58 2.59zM19 3H5c-1.11 0-2 .9-2 2v4h2V5h14v14H5v-4H3v4c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2z"></path></svg>
+<span>Acessar</span>
+</button>
+<button class="ghost-button wide" id="recoverAdminButton" style="margin-top:4px;" type="button">Recuperar Acesso de Admin</button>
+</form>
+<p class="hint" id="dataFolderHint"></p>
+</div>
+</div>
+<!-- ═══ MAIN APP SHELL ═══ -->
+<div class="app-shell hidden" id="appShell">
+<aside class="sidebar">
+<div class="brand compact" style="margin-bottom:24px">
+<div class="brand-mark" style="width:28px;height:28px;font-size:11px">BA</div>
+<div>
+<strong>Banco de Artes</strong>
+<span id="sidebarUser">Operador</span>
+</div>
+</div>
+<p class="eyebrow sidebar-section-label">Operação</p><nav class="nav">
+<button class="nav-item active" data-view="dashboard">
+<div class="nav-icon"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 13.5h6.5V4H4v9.5Zm9.5 6.5H20V10h-6.5v10ZM4 20h6.5v-3.5H4V20Zm9.5-13H20V4h-6.5v3Z"></path></svg></div>
+<span>Central</span>
+</button>
+<button class="nav-item" data-view="batch">
+<div class="nav-icon"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 3v12m0-12 4 4m-4-4-4 4M5 14v4a3 3 0 0 0 3 3h8a3 3 0 0 0 3-3v-4"></path></svg></div>
+<span>Cadastro de artes</span>
+</button>
+<button class="nav-item" data-view="artworks">
+<div class="nav-icon"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v11a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 17.5v-11Zm3 8 2.2-2.2a1 1 0 0 1 1.4 0l1.9 1.9 3.1-3.1a1 1 0 0 1 1.4 0L20 14.2M8 8.5h.01"></path></svg></div>
+<span>Banco visual</span>
+</button>
+<button class="nav-item" data-view="drive">
+<div class="nav-icon"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 7.5A2.5 2.5 0 0 1 6.5 5h4l2 2.5h5A2.5 2.5 0 0 1 20 10v6.5a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 16.5v-9Z"></path></svg></div>
+<span>Drive / Temas</span>
+</button>
+<button class="nav-item" data-view="finance">
+<div class="nav-icon"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M6 3.8h12v16.4l-2-1.2-2 1.2-2-1.2-2 1.2-2-1.2-2 1.2V3.8Zm3 5h6m-6 4h6m-6 4h3"></path></svg></div>
+<span>Pedidos</span>
+</button>
+<button class="nav-item" data-view="reservations">
+<div class="nav-icon"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M8 11V8a4 4 0 1 1 8 0v3M6.5 11h11A1.5 1.5 0 0 1 19 12.5v6A1.5 1.5 0 0 1 17.5 20h-11A1.5 1.5 0 0 1 5 18.5v-6A1.5 1.5 0 0 1 6.5 11Zm5.5 3v3"></path></svg></div>
+<span>IDs reservados</span>
+</button>
+</nav>
+<p class="eyebrow sidebar-section-label" style="margin-top:24px;margin-bottom:8px;padding:0 10px;">Controle</p>
+<nav class="nav" id="adminNav" style="display:none">
+<button class="nav-item" data-view="users">
+<div class="nav-icon"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M16 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7ZM8 12a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm8 2c-2.5 0-5 1.2-5 3.6V20h10v-2.4c0-2.4-2.5-3.6-5-3.6ZM8 14c-2.2 0-4 1-4 3v3h5"></path></svg></div>
+<span>Equipe</span>
+</button>
+<button class="nav-item" data-view="audit">
+<div class="nav-icon"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M7 4h10a2 2 0 0 1 2 2v14l-4-2-3 2-3-2-4 2V6a2 2 0 0 1 2-2Zm3 5h4m-4 4h6m-6 4h3"></path></svg></div>
+<span>Auditoria</span>
+</button>
+<button class="nav-item" data-view="settings">
+<div class="nav-icon"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 7h16M7 7a2 2 0 1 0 0-4 2 2 0 0 0 0 4ZM4 17h16M17 17a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z"></path></svg></div>
+<span>Sistema</span>
+</button>
+</nav>
+<div style="margin-top:auto; display:flex; flex-direction:column; gap:8px">
+<button class="ghost-button wide" id="themeToggle" style="justify-content:flex-start;">
+<svg style="width:16px;height:16px;fill:currentColor;margin-right:8px" viewBox="0 0 24 24"><path d="M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9 9-4.03 9-9c0-.46-.04-.92-.1-1.36-.98 1.37-2.58 2.26-4.4 2.26-2.98 0-5.4-2.42-5.4-5.4 0-1.81.89-3.42 2.26-4.4-.44-.06-.9-.1-1.36-.1z"></path></svg> Alternar Tema
+          </button>
+<button class="ghost-button wide" id="logoutButton" style="justify-content:flex-start;color:var(--red)">
+<svg style="width:16px;height:16px;fill:currentColor;margin-right:8px" viewBox="0 0 24 24"><path d="M10.09 15.59L11.5 17l5-5-5-5-1.41 1.41L12.67 11H3v2h9.67l-2.58 2.59zM19 3H5c-1.11 0-2 .9-2 2v4h2V5h14v14H5v-4H3v4c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2z"></path></svg> Sair
+          </button>
+<button class="secondary-button" id="forceSyncButton">
+<svg style="width:14px;height:14px;fill:currentColor;margin-right:6px" viewBox="0 0 24 24"><path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46A7.93 7.93 0 0020 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74A7.93 7.93 0 004 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"></path></svg>
+<span>Sincronizar dados</span>
+</button>
+</div>
+<div class="sidebar-card" style="margin-top:16px;">
+<div class="live-dot"></div>
+<div>
+<strong class="metric-google-status" id="metricGoogleSidebar">Buscando...</strong>
+<span class="metric-google-sub" id="metricGoogleSubSidebar">Conexão Google</span>
+</div>
+</div>
+</aside>
+<main class="main">
+<div class="topbar">
+<div>
+<h1 id="viewTitle">Central</h1>
+<p class="muted" id="viewSubtitle" style="margin-top:2px">Pulso da operação, integração Google, presença local e indicadores de acervo.</p>
+</div>
+</div>
+<!-- ═══ DASHBOARD ═══ -->
+<section class="view active" id="dashboardView">
+<div class="notice">
+<div>
+<strong id="noticeTitle">Google precisa de atenção</strong>
+<span id="noticeText">Conecte sua conta para integrar as planilhas oficiais.</span>
+</div>
+<div class="top-actions">
+<span class="notice-pill" id="noticeState">Configurar</span>
+<button class="primary-button" id="authButton">Conectar Google</button>
+</div>
+</div>
+<div class="links-row" id="dashboardLinks"></div>
+<div class="metric-grid">
+<div class="metric accent">
+<span>Artes publicadas</span>
+<strong id="metricTotalArtworks">0</strong>
+<small>Cadastradas no banco</small>
+</div>
+<div class="metric">
+<span>Próximo ID base</span>
+<strong id="metricNextId">1</strong>
+<small>Estimativa</small>
+</div>
+<div class="metric">
+<span>Tema com mais artes</span>
+<strong id="topThemeText">-</strong>
+<small>Mais popular</small>
+</div>
+<div class="metric">
+<span>Status da API</span>
+<strong class="metric-google-status" id="metricGoogleDashboard">OFF</strong>
+<small class="metric-google-sub" id="metricGoogleSubDashboard">ação necessária</small>
+</div>
+</div>
+<div class="dashboard-grid">
+<section class="panel">
+<div class="panel-header"><div><p class="eyebrow">Rede</p><h2>Presença Local</h2></div></div>
+<div class="people-list" id="onlineList"></div>
+</section>
+<section class="panel">
+<div class="panel-header"><div><p class="eyebrow">Geração de Artes</p><h2>Top Autores</h2></div></div>
+<div class="rank-grid" id="byUserList"></div>
+</section>
+<section class="panel">
+<div class="panel-header"><div><p class="eyebrow">Diagnóstico</p><h2>Integrações</h2></div></div>
+<div class="mini-list" id="provisioningPlan"></div>
+<button class="primary-button wide" id="provisionButton" style="margin-top:16px">Preparar bases</button>
+</section>
+</div>
+</section>
+<!-- ═══ BATCH / UPLOAD ═══ -->
+<section class="view" id="batchView">
+<div class="toolbar" style="justify-content: space-between;">
+<div style="display:flex; gap:6px;">
+<button class="primary-button" id="btnScanFiles">Escanear arquivos locais</button>
+<button class="secondary-button" id="btnChooseFolder">Trocar pasta de busca</button>
+<button class="secondary-button" id="btnNewBlankRow">Adicionar linha</button>
+</div>
+<div class="segmented">
+<button class="active" id="standardMode">Padrão</button>
+<button id="manualMode">Manual</button>
+</div>
+</div>
+<div class="command-bar">
+<button class="ghost-button" id="parseNamesButton">Ler nomes dos arquivos</button>
+<button class="ghost-button" id="validateRowsButton">Validar lote</button>
+<button class="ghost-button" id="fillFromReservationButton">Usar IDs da Reserva</button>
+<button class="ghost-button" id="removeSelectedButton" style="color:var(--red)">Remover Selecionados</button>
+</div>
+<div class="filter-bar batch-filter-bar">
+<div class="search-input-wrapper">
+<svg class="search-icon" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"></path></svg>
+<input id="batchSearch" placeholder="Buscar no lote por arquivo, ID, tema, produto ou cliente..." type="text"/>
+</div>
+<select id="batchFilterStatus">
+<option value="all">Todos os estados</option>
+<option value="selected">Selecionadas</option>
+<option value="ok">Aptas</option>
+<option value="error">Com erro</option>
+</select>
+<select id="batchFilterProduct">
+<option value="all">Todos os produtos</option>
+</select>
+<button class="secondary-button" id="batchClearFilters" type="button">Limpar filtros</button>
+</div>
+<section class="panel automation-panel">
+<div class="panel-header">
+<div><p class="eyebrow">Photoshop + Drive</p><h2>Lote painel redondo 50X50</h2></div>
+<button class="primary-button" id="runPanel50Button">Renomear, gerar e enviar</button>
+</div>
+<div class="automation-summary">
+<span id="panel50DetectedTheme">Tema: detectado pela pasta SKU</span>
+<span>PAINEL REDONDO</span>
+<span>50X50</span>
+</div>
+<div class="automation-grid">
+<label>Pasta SKU com as artes<input id="panel50InputFolder"/></label>
+<label>Tema<input id="panel50Theme"/></label>
+<label>Temas organizados<input id="panel50OrganizedRoot"/></label>
+<label>Pasta local do Drive<input id="panel50DriveRoot"/></label>
+</div>
+<div class="field-actions">
+<button class="secondary-button" id="choosePanel50Input" type="button">Escolher pasta SKU</button>
+<button class="secondary-button" id="choosePanel50Organized" type="button">Escolher organizados</button>
+<button class="secondary-button" id="choosePanel50DriveRoot" type="button">Escolher Drive local</button>
+<label class="switch-row" style="margin-left:auto"><input checked="" id="panel50UploadAfter" type="checkbox"/> Enviar ao Drive e planilha ao terminar</label>
+</div>
+<div class="upload-tracker">
+<div class="upload-tracker-head">
+<strong id="panel50State">Pronto para processar</strong>
+<span id="panel50Count">-</span>
+</div>
+<div class="progress-track"><span id="panel50ProgressBar"></span></div>
+<small id="panel50Hint">Pronto para renomear, gerar mockup e enviar.</small>
+</div>
+</section>
+<div class="batch-layout">
+<section class="panel" style="flex:1;display:flex;flex-direction:column;min-height:0;padding:12px">
+<div class="table-wrap">
+<table id="batchTable">
+<thead>
+<tr>
+<th>Sel</th>
+<th>Estado</th>
+<th>Img</th>
+<th>Arquivo</th>
+<th>ID</th>
+<th>Tema</th>
+<th>Produto</th>
+<th>Tamanho</th>
+<th>Cliente</th>
+<th>Telefone</th>
+<th>Ações</th>
+</tr>
+</thead>
+<tbody id="batchRows"></tbody>
+</table>
+</div>
+</section>
+<aside class="panel summary-panel">
+<div class="panel-header" style="margin-bottom:0;margin-right:16px"><div><p class="eyebrow">Pré-envio</p><h2>Resumo</h2></div></div>
+<div class="summary-stack">
+<div><span>Total</span><strong id="summaryTotal">0</strong></div>
+<div><span>Aptas</span><strong id="summaryValid">0</strong></div>
+<div><span>Erros</span><strong id="summaryInvalid">0</strong></div>
+</div>
+<div class="upload-tracker" id="uploadTracker">
+<div class="upload-tracker-head">
+<strong id="uploadState">Pronto para enviar</strong>
+<span id="uploadEta">-</span>
+</div>
+<div class="progress-track"><span id="uploadProgressBar"></span></div>
+<small id="uploadHint">Nenhum envio em andamento.</small>
+</div>
+<button class="primary-button" id="submitBatchButton">Enviar selecionadas</button>
+</aside>
+</div>
+</section>
+<!-- ═══ ARTES CADASTRADAS ═══ -->
+<section class="view" id="artworksView">
+<div class="links-row" id="artworksLinks"></div>
+<section class="panel" style="display:flex;flex-direction:column;flex:1;min-height:0">
+<div class="panel-header">
+<div><p class="eyebrow">Planilha de artes</p><h2>Consulta, prévia e edição</h2></div>
+<div class="top-actions">
+<button aria-label="Ativar ferramentas de edição" class="icon-btn" id="artworkToolsButton" title="Ativar ferramentas">
+<svg viewBox="0 0 24 24"><path d="M19.43 12.98c.04-.32.07-.65.07-.98s-.02-.66-.07-.98l2.11-1.65c.19-.15.24-.42.12-.64l-2-3.46c-.12-.22-.37-.31-.6-.22l-2.49 1a7.34 7.34 0 0 0-1.69-.98L14.5 2.42A.49.49 0 0 0 14 2h-4c-.25 0-.46.18-.5.42L9.12 5.07c-.61.24-1.18.56-1.69.98l-2.49-1a.51.51 0 0 0-.6.22l-2 3.46c-.12.22-.07.49.12.64l2.11 1.65c-.05.32-.07.65-.07.98s.02.66.07.98l-2.11 1.65a.5.5 0 0 0-.12.64l2 3.46c.12.22.37.31.6.22l2.49-1c.51.4 1.08.73 1.69.98l.38 2.65c.04.24.25.42.5.42h4c.25 0 .46-.18.5-.42l.38-2.65c.61-.24 1.18-.56 1.69-.98l2.49 1c.23.08.48 0 .6-.22l2-3.46a.5.5 0 0 0-.12-.64l-2.11-1.65zM12 15.5A3.5 3.5 0 1 1 12 8a3.5 3.5 0 0 1 0 7.5z"></path></svg>
+</button>
+<select id="artworkSort">
+<option value="desc">Maior ID primeiro</option>
+<option value="asc">Menor ID primeiro</option>
+</select>
+<button class="secondary-button" id="reloadArtworksButton">Atualizar agora</button>
+</div>
+</div>
+<div class="filter-bar">
+<div class="search-input-wrapper">
+<svg class="search-icon" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"></path></svg>
+<input id="artworkSearch" placeholder="Buscar por ID, tema, produto..." type="text"/>
+</div>
+<select id="artworkFilterTheme"><option value="all">Todos os temas</option></select>
+<select id="artworkFilterProduct"><option value="all">Todos os produtos</option></select>
+<select id="artworkFilterUser"><option value="all">Cadastrado por</option></select>
+<button class="secondary-button" id="artworkClearFilters">Limpar filtros</button>
+</div>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Img</th><th>ID</th><th>TEMA</th><th>PRODUTO</th><th>TAMANHO</th><th>CLIENTE</th><th>CADASTRADO POR</th><th>DATA</th><th>Ações</th></tr></thead>
+<tbody id="artworkRows"></tbody>
+</table>
+</div>
+</section>
+</section>
+<!-- ═══ RESERVAS ═══ -->
+<!-- DRIVE -->
+<section class="view" id="driveView">
+<section class="panel" style="display:flex;flex-direction:column;flex:1;min-height:0">
+<div class="panel-header">
+<div><p class="eyebrow">Google Drive</p><h2>Pastas por tema</h2></div>
+<div class="top-actions">
+<button class="secondary-button" id="openDriveRootButton">Abrir raiz</button>
+<button class="primary-button" id="refreshDriveFoldersButton">Sincronizar pastas</button>
+</div>
+</div>
+<div class="drive-summary" id="driveSummary"></div>
+<div class="filter-bar">
+<div class="search-input-wrapper">
+<svg class="search-icon" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"></path></svg>
+<input id="driveSearch" placeholder="Buscar pasta de tema..." type="text"/>
+</div>
+</div>
+<div class="drive-grid" id="driveFolderList"></div>
+</section>
+</section>
+<section class="view" id="financeView">
+<section class="panel finance-panel premium-page" style="display:flex;flex-direction:column;flex:1;min-height:0">
+<div class="panel-header">
+<div><p class="eyebrow">Pedidos</p><h2>Pedidos</h2></div>
+<button class="primary-button" id="openOrderModalButton">Novo pedido</button>
+</div>
+<div class="finance-hero">
+<div>
+<strong>Pedidos por código, sem planilha aberta</strong>
+<span>Escolha cliente, adicione IDs, valide prévias e copie o lançamento final com menos erro.</span>
+</div>
+<div class="finance-stat"><span id="financeClientCount">0</span><small>clientes encontrados</small></div>
+</div>
+<div class="finance-empty-state">
+<strong>Nenhum pedido em aberto.</strong>
+<span>Clique em Adicionar pedido para abrir o modal de lançamento.</span>
+</div>
+</section>
+</section>
+<section class="view" id="reservationsView">
+<div class="two-col">
+<div>
+<form class="panel" id="reservationForm" style="margin-bottom:12px">
+<div class="panel-header"><div><p class="eyebrow">Nova reserva</p><h2>Separar IDs</h2></div></div>
+<label>ID inicial<input min="1" name="start" placeholder="Vazio = proximo livre" type="number"/></label>
+<label>Quantidade<input max="500" min="1" name="count" required="" type="number"/></label>
+<label>Descrição<input name="label" placeholder="Ex.: lote Barbie cliente Ana"/></label>
+<button class="primary-button wide" type="submit">Reservar IDs</button>
+</form>
+<section class="panel">
+<div class="panel-header"><div><p class="eyebrow">Locks Globais</p><h2>Execução Concorrente</h2></div></div>
+<div class="reservation-list" id="lockList"></div>
+</section>
+</div>
+<section class="panel">
+<div class="panel-header"><div><p class="eyebrow">IDs bloqueados</p><h2>Reservas ativas</h2></div></div>
+<div class="reservation-list" id="reservationList"></div>
+</section>
+</div>
+</section>
+<!-- ═══ USUÁRIOS (FIXED) ═══ -->
+<section class="view" id="usersView">
+<div class="two-col-layout">
+<aside class="two-col-sidebar">
+<div class="panel-header">
+<div><p class="eyebrow">AÇÃO</p><h2>Formulário</h2></div>
+</div>
+<div class="user-tabs">
+<button class="active" id="tabNewUser" type="button">Novo usuário</button>
+<button id="tabEditUser" type="button">Editar</button>
+</div>
+<form id="userActionForm" style="display:flex;flex-direction:column;flex:1">
+<input name="userId" type="hidden"/>
+<p class="hint" id="editUserHint" style="display:none;margin-top:0;margin-bottom:12px">Selecione um usuário na lista →</p>
+<label>Login<input autocapitalize="none" name="login" required=""/></label>
+<label>Nome<input name="name" required=""/></label>
+<label>Senha<input name="password" placeholder="Para edição, vazio mantém a atual" type="password"/></label>
+<label>Perfil
+                  <select name="role">
+<option value="operator">Operador</option>
+<option value="admin">Admin</option>
+</select>
+</label>
+<div style="margin-top:auto;display:flex;flex-direction:column;gap:8px">
+<button class="primary-button wide" id="btnCreateUser" type="submit">
+<svg style="width:14px;height:14px;fill:currentColor;margin-right:6px" viewBox="0 0 24 24"><path d="M15 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm-9-2V7H4v3H1v2h3v3h2v-3h3v-2H6zm9 4c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"></path></svg>
+                    Criar usuário
+                  </button>
+<button class="primary-button wide" id="btnSaveUser" style="display:none" type="button">Salvar alterações</button>
+<button class="secondary-button wide" id="btnToggleActive" style="display:none" type="button">Desativar</button>
+</div>
+</form>
+</aside>
+<main class="two-col-main">
+<div class="panel-header" style="margin-bottom:12px">
+<div><p class="eyebrow">EQUIPE</p><h2>Usuários cadastrados</h2></div>
+<div class="badge" id="usersCountBadge">0 usuário(s)</div>
+</div>
+<div class="filter-bar" style="margin-bottom:16px;background:var(--surface)">
+<div class="search-input-wrapper">
+<svg class="search-icon" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"></path></svg>
+<input id="userSearchInput" placeholder="Filtrar equipe..." type="text"/>
+</div>
+</div>
+<div class="user-cards" id="userList">
+<!-- rendered via js -->
+</div>
+</main>
+</div>
+</section>
+<!-- ═══ LOGS ═══ -->
+<section class="view" id="auditView">
+<section class="panel" style="flex:1">
+<div class="panel-header"><div><p class="eyebrow">Auditoria</p><h2>Logs do sistema</h2></div></div>
+<div class="reservation-list" id="auditRows"></div>
+</section>
+</section>
+<!-- ═══ SISTEMA (FIXED) ═══ -->
+<section class="view" id="settingsView">
+<form class="panel" id="settingsForm" style="display:flex;flex-direction:column;flex:1;min-height:0">
+<div class="grid-50-50">
+<section style="display:flex;flex-direction:column">
+<div class="panel-header"><div><p class="eyebrow">Google</p><h2>Integrações da Nuvem</h2></div></div>
+<label>Pasta fixa de dados<input name="fixedDataFolder"/></label>
+<label>Raiz painel redondo 50X50<input name="panel50SourceRoot"/></label>
+<label>Temas organizados 50X50<input name="panel50OrganizedRoot"/></label>
+<label>Pasta local do Drive 50X50<input name="panel50DriveLocalRoot"/></label>
+<label>Mockup painel redondo 50X50<input name="panel50MockupPath"/></label>
+<label>Pasta dos clientes<input name="financialClientRoot"/></label>
+<label>Arquivo de credenciais<input name="credentialsPath" placeholder="Deixe vazio para padrão"/></label>
+<label>Nome da planilha central<input name="baseSpreadsheetName"/></label>
+<label>ID da planilha central
+                  <div class="copy-input-wrapper">
+<input name="baseSpreadsheetId"/>
+<button class="copy-btn" type="button">Copiar</button>
+</div>
+</label>
+<label>ID da planilha de artes
+                  <div class="copy-input-wrapper">
+<input name="operationalSpreadsheetId"/>
+<button class="copy-btn" type="button">Copiar</button>
+</div>
+</label>
+<div class="field-actions" style="margin-bottom:16px">
+<button class="secondary-button" id="validateSheetButton" type="button">Testar conexão</button>
+<button class="secondary-button" id="testConnectivityButton" type="button">Testar tudo</button>
+<span class="inline-status" id="sheetValidationStatus">Não testada</span>
+</div>
+<div class="diagnostic-list" id="connectivityResults"></div>
+<label>Pasta raiz no Drive<input name="driveFolderName"/></label>
+</section>
+<section style="display:flex;flex-direction:column;padding-left:10px">
+<div class="panel-header"><div><p class="eyebrow">Regras</p><h2>Políticas e Parâmetros</h2></div></div>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+<label>Aba de cadastro<input name="cadastroSheetName"/></label>
+<label>Aba de logs<input name="operationalLogsSheetName"/></label>
+</div>
+<label>Pastas de imagens locais (uma por linha)<textarea name="localImageFolders" rows="2"></textarea></label>
+<label>Produtos válidos (um por linha)<textarea name="validProducts" rows="3"></textarea></label>
+<label>Medidas por produto (Produto: tam1, tam2)<textarea name="productSizes" rows="4"></textarea></label>
+<div class="toggle-list">
+<div class="toggle-row">
+<div>
+<strong>Uploads públicos no Drive</strong>
+<span style="display:block;font-size:11px;color:var(--text-3)">Torna o link das imagens acessível a qualquer um.</span>
+</div>
+<label class="switch-row"><input name="publicDriveUploads" type="checkbox"/></label>
+</div>
+<div class="toggle-row">
+<div>
+<strong>Lote de cadastro manual</strong>
+<span style="display:block;font-size:11px;color:var(--text-3)">Permite adicionar linhas em branco na fila de upload.</span>
+</div>
+<label class="switch-row"><input name="allowManualBatch" type="checkbox"/></label>
+</div>
+<div class="toggle-row">
+<div>
+<strong>Modo manutenção</strong>
+<span style="display:block;font-size:11px;color:var(--text-3)">Bloqueia uploads e cadastros operacionais.</span>
+</div>
+<label class="switch-row"><input name="maintenanceMode" type="checkbox"/></label>
+</div>
+</div>
+</section>
+</div>
+<div style="margin-top:auto;padding-top:20px;border-top:1px solid var(--border)">
+<button class="primary-button wide" id="btnSaveSettings" style="height:40px;font-size:14px" type="submit">
+<svg fill="currentColor" height="16" style="margin-right:8px;vertical-align:middle;" viewBox="0 0 24 24" width="16"><path d="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z"></path></svg>
+                Salvar sistema
+              </button>
+</div>
+</form>
+</section>
+</main>
+</div>
+<!-- ═══ TOAST & MODAL ═══ -->
+<div class="toast" id="globalToast">Salvo com sucesso</div>
+<!-- LOADING OVERLAY -->
+<div class="hidden" id="globalOverlay">
+<div class="spinner"></div>
+<span id="globalOverlayText">Carregando...</span>
+</div>
+<div aria-labelledby="orderModalTitle" aria-modal="true" class="modal hidden premium-modal" id="orderModal" role="dialog">
+<div class="modal-card order-modal-card">
+<div class="modal-toolbar order-modal-header">
+<div>
+<p class="eyebrow">Novo pedido</p>
+<strong id="orderModalTitle">Lançar pedido</strong>
+</div>
+<button aria-label="Fechar pedido" class="ghost-button modal-close" id="closeOrderModalButton">Fechar</button>
+</div>
+<div class="order-modal-body">
+<section class="order-section">
+<label>Cliente
+              <input autocomplete="off" id="financeClientInput" placeholder="Digite nome ou código"/>
+</label>
+<div class="client-suggestions hidden" id="financeClientSuggestions"></div>
+<label class="hidden" id="financeNewClientWrap">Criar novo cliente
+              <input id="financeNewClientName" placeholder="Nome do novo cliente"/>
+</label>
+</section>
+<section class="order-section">
+<label>Código da arte
+              <input id="financeCodeInput" placeholder="Digite o ID e aperte Enter"/>
+</label>
+<div class="order-feedback" id="financeSummary">Nenhuma arte adicionada.</div>
+</section>
+<section class="order-section order-gallery-section">
+<div class="section-title-row">
+<strong>Artes do pedido</strong>
+<span id="financeSelectedCount">0 selecionadas</span>
+</div>
+<div class="order-art-grid" id="financeArtGrid"></div>
+<div class="order-checklist hidden" id="financeChecklist"></div>
+</section>
+</div>
+<div class="order-modal-footer">
+<button class="secondary-button" id="clearOrderButton" type="button">Limpar</button>
+<button class="primary-button" id="financeCopyButton" type="button">Copiar lançamento</button>
+</div>
+</div>
+</div>
+<div aria-labelledby="confirmTitle" aria-modal="true" class="modal hidden premium-modal" id="confirmModal" role="dialog">
+<div class="modal-card confirm-card">
+<div class="modal-toolbar">
+<div>
+<p class="eyebrow" id="confirmEyebrow">Confirmação</p>
+<strong id="confirmTitle">Confirmar ação</strong>
+</div>
+</div>
+<p class="confirm-message" id="confirmMessage"></p>
+<div class="confirm-actions">
+<button class="secondary-button" id="confirmCancelButton" type="button">Cancelar</button>
+<button class="primary-button" id="confirmOkButton" type="button">Confirmar</button>
+</div>
+</div>
+</div>
+<div class="modal hidden" id="previewModal">
+<div class="modal-card">
+<div class="modal-toolbar">
+<strong>Prévia da arte</strong>
+<button class="ghost-button modal-close" id="closePreviewButton">
+<svg fill="currentColor" height="16" style="margin-right:4px;vertical-align:middle;" viewBox="0 0 24 24" width="16"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"></path></svg> Fechar
+          </button>
+</div>
+<div class="preview-square">
+<iframe id="drivePreviewFrame"></iframe>
+<img alt="Preview da arte" id="localPreviewImage"/>
+</div>
+</div>
+</div>
+<script src="./app-premium.js"></script>
+</body>
+</html>

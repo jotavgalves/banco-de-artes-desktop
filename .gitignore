@@ -1,0 +1,20 @@
+# Dependencies
+node_modules/
+
+# Runtime/cache/local user data
+runtime/
+*.log
+
+# Secrets and OAuth tokens
+credentials.json
+token.json
+*.credentials.json
+*.secret.json
+.env
+.env.*
+
+# Local shortcuts and OS files
+*.lnk
+Thumbs.db
+.DS_Store
+
