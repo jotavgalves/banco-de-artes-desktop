@@ -10,7 +10,11 @@ const state = {
   artworks: [],
   driveFolders: null,
   artworkSort: "desc",
+  artworkViewMode: "cards",
   artworkTools: false,
+  artworkSelection: new Set(),
+  brokenArtworkImageIds: new Set(),
+  currentFindArtworkId: "",
   uploadStartedAt: 0,
   mode: "standard",
   panel50ThemeTouched: false,
@@ -30,13 +34,47 @@ const setTextAll = (selector, value) => $$(selector).forEach((element) => { elem
 function setBusy(message = "Carregando...") {
   if ($("#globalOverlayText")) $("#globalOverlayText").textContent = message;
   $("#globalOverlay")?.classList.remove("hidden");
+  startActionProgress(message, "Preparando...", 8);
 }
 
 function clearBusy() {
   $("#globalOverlay")?.classList.add("hidden");
+  finishActionProgress();
+}
+
+function startActionProgress(title = "Processando", detail = "Aguarde...", percent = 5) {
+  const box = $("#globalProgress");
+  if (!box) return;
+  $("#globalProgressTitle").textContent = title;
+  $("#globalProgressDetail").textContent = detail;
+  updateActionProgress(percent);
+  box.classList.remove("hidden");
+  clearInterval(startActionProgress.timer);
+  let value = Math.max(5, Number(percent || 5));
+  startActionProgress.timer = setInterval(() => {
+    value = Math.min(92, value + Math.max(1, Math.round((95 - value) * 0.08)));
+    updateActionProgress(value);
+  }, 650);
+}
+
+function updateActionProgress(percent = 0, detail = "") {
+  const value = Math.max(0, Math.min(100, Math.round(Number(percent || 0))));
+  if ($("#globalProgressBar")) $("#globalProgressBar").style.width = `${value}%`;
+  if ($("#globalProgressPercent")) $("#globalProgressPercent").textContent = `${value}%`;
+  if (detail && $("#globalProgressDetail")) $("#globalProgressDetail").textContent = detail;
+}
+
+function finishActionProgress(detail = "Concluído.") {
+  const box = $("#globalProgress");
+  if (!box) return;
+  clearInterval(startActionProgress.timer);
+  updateActionProgress(100, detail);
+  clearTimeout(finishActionProgress.timer);
+  finishActionProgress.timer = setTimeout(() => box.classList.add("hidden"), 450);
 }
 
 async function boot() {
+  installErrorLogging();
   bindNavigation();
   bindActions();
   bindFilters();
@@ -44,10 +82,7 @@ async function boot() {
   await loadBootstrap();
   renderLoginMode();
   
-  // Update cache initially
-  if (state.config?.baseSpreadsheetId) {
-    state.cache = await window.artBank.runSync().catch(() => state.cache);
-  }
+  state.cache = await window.artBank.runSync().catch(() => state.cache);
 }
 
 function bindNavigation() {
@@ -85,17 +120,16 @@ function bindActions() {
     $("#forceSyncButton")?.addEventListener("click", refreshAll);
     $("#authButton")?.addEventListener("click", authenticateGoogle);
     $("#provisionButton")?.addEventListener("click", provisionGoogle);
-    $("#btnScanFiles")?.addEventListener("click", scanConfiguredFolders);
-    $("#btnChooseFolder")?.addEventListener("click", chooseFolderAndScan);
-    $("#btnNewBlankRow")?.addEventListener("click", addBlankRow);
     $("#removeSelectedButton")?.addEventListener("click", removeSelectedRows);
     $("#reloadArtworksButton")?.addEventListener("click", refreshArtworks);
+    $("#refreshMissingArtworkImagesButton")?.addEventListener("click", refreshMissingArtworkImages);
+    $("#saveAllArtworksButton")?.addEventListener("click", saveAllArtworkEdits);
+    $("#deleteSelectedArtworksButton")?.addEventListener("click", deleteSelectedArtworks);
+    $("#selectAllArtworks")?.addEventListener("change", toggleAllVisibleArtworks);
     $("#validateRowsButton")?.addEventListener("click", validateRows);
     $("#submitBatchButton")?.addEventListener("click", uploadBatch);
     $("#runPanel50Button")?.addEventListener("click", runPanel50Automation);
     $("#choosePanel50Input")?.addEventListener("click", choosePanel50Input);
-    $("#choosePanel50Organized")?.addEventListener("click", choosePanel50Organized);
-    $("#choosePanel50DriveRoot")?.addEventListener("click", choosePanel50DriveRoot);
     $("#panel50InputFolder")?.addEventListener("input", updatePanel50ThemePreview);
     $("#panel50Theme")?.addEventListener("input", () => {
       state.panel50ThemeTouched = true;
@@ -110,14 +144,16 @@ function bindActions() {
     $("#financeCopyButton")?.addEventListener("click", copyFinanceOrder);
     $("#confirmCancelButton")?.addEventListener("click", () => resolveConfirm(false));
     $("#confirmOkButton")?.addEventListener("click", () => resolveConfirm(true));
+    $("#closeFindArtworkButton")?.addEventListener("click", closeFindArtworkModal);
+    $("#findDriveLocalButton")?.addEventListener("click", () => openArtworkLocation("drive-local"));
+    $("#findOrganizedLocalButton")?.addEventListener("click", () => openArtworkLocation("organized"));
+    $("#localPreviewImage")?.addEventListener("error", showPreviewFallback);
     $("#refreshDriveFoldersButton")?.addEventListener("click", () => refreshDriveFolders(true));
     $("#openDriveRootButton")?.addEventListener("click", openDriveRoot);
     $("#standardMode")?.addEventListener("click", () => setMode("standard"));
     $("#manualMode")?.addEventListener("click", () => setMode("manual"));
     $("#fillFromReservationButton")?.addEventListener("click", fillFromReservation);
-    $("#parseNamesButton")?.addEventListener("click", parseStandardRows);
     $("#settingsForm")?.addEventListener("submit", saveSettings);
-  $("#validateSheetButton")?.addEventListener("click", validateOperationalSheet);
   $("#testConnectivityButton")?.addEventListener("click", testConnectivity);
   $("#artworkToolsButton")?.addEventListener("click", toggleArtworkTools);
   window.artBank.onUploadProgress?.((progress) => {
@@ -135,7 +171,7 @@ function bindActions() {
        html.setAttribute("data-theme", next);
        localStorage.setItem("theme", next);
     });
-    const savedTheme = localStorage.getItem("theme") || "dark";
+    const savedTheme = localStorage.getItem("theme") || "light";
     document.documentElement.setAttribute("data-theme", savedTheme);
   }
   
@@ -190,14 +226,14 @@ function renderLoginMode() {
   const phrases = [
     "Um acervo visual com IDs protegidos, prévias rápidas, Drive e auditoria em uma operação só.",
     "Cadastre, revise e publique artes com fluxo guiado, menos retrabalho e mais confiança operacional.",
-    "Controle arquivos, reservas, equipe e planilhas com uma experiência desenhada para ritmo de produção.",
-    "Encontre, valide e lance artes sem ficar alternando entre pastas, planilhas e mensagens soltas.",
+    "Controle arquivos, reservas, equipe e Drive com uma experiência desenhada para ritmo de produção.",
+    "Encontre, valide e lance artes sem alternar entre pastas, Drive e mensagens soltas.",
     "A base oficial das artes, com rastreio visual, histórico de ações e publicação mais segura."
   ];
   const phrase = phrases[Math.floor(Math.random() * phrases.length)];
   if ($("#loginHeadline")) $("#loginHeadline").innerHTML = firstAccess ? "Primeiro acesso,<br/>operação pronta para escalar." : "Banco visual,<br/>produção sob controle.";
   if ($("#loginPhrase")) $("#loginPhrase").textContent = firstAccess
-    ? "Crie o administrador inicial e libere a operação com usuários, auditoria, Google Sheets e Drive."
+    ? "Crie o administrador inicial e libere a operação com usuários, auditoria, Supabase e Drive."
     : phrase;
   if ($("#loginModeLabel")) $("#loginModeLabel").textContent = firstAccess ? "Primeiro acesso" : "Acesso";
   if ($("#loginTitle")) $("#loginTitle").textContent = firstAccess ? "Criar administrador" : "Entrar no sistema";
@@ -241,7 +277,8 @@ async function handleLogin(event) {
     $("#loginScreen").classList.add("hidden");
     $("#appShell").classList.remove("hidden");
     $("#appShell").classList.remove("locked");
-    $("#sidebarUser").textContent = `${state.user.name} (${state.user.role})`;
+    const providerLabel = result.provider === "supabase" ? "Supabase" : "Local";
+    $("#sidebarUser").textContent = `${state.user.name} (${state.user.role}) · ${providerLabel}`;
     
     if ($("#adminNav")) {
        $("#adminNav").style.display = state.user.role === "admin" ? "grid" : "none";
@@ -249,7 +286,7 @@ async function handleLogin(event) {
 
     startHeartbeat();
     await refreshAll();
-    toast("Login realizado.");
+    toast(`Login realizado via ${providerLabel}.`);
   } catch (error) {
     toast(error.message);
   } finally {
@@ -269,29 +306,76 @@ async function logout() {
 
 function startHeartbeat() {
   clearInterval(startHeartbeat.timer);
+  window.artBank.heartbeat(currentViewName()).then(refreshPresence).catch(() => null);
   startHeartbeat.timer = setInterval(async () => {
-    await window.artBank.heartbeat();
+    await window.artBank.heartbeat(currentViewName());
     await refreshPresence();
     await refreshReservations();
   }, 30000);
 }
 
+function currentViewName() {
+  return $(".view.active")?.id?.replace(/View$/, "") || "";
+}
+
+function installErrorLogging() {
+  if (installErrorLogging.installed) return;
+  installErrorLogging.installed = true;
+  window.addEventListener("error", (event) => {
+    reportClientError({
+      source: "renderer",
+      message: event.message,
+      stack: event.error?.stack || "",
+      context: { filename: event.filename, line: event.lineno, column: event.colno, view: currentViewName() },
+    });
+  });
+  window.addEventListener("unhandledrejection", (event) => {
+    const reason = event.reason || {};
+    reportClientError({
+      source: "renderer",
+      message: reason.message || String(reason),
+      stack: reason.stack || "",
+      context: { type: "unhandledrejection", view: currentViewName() },
+    });
+  });
+}
+
+function reportClientError(payload = {}) {
+  if (!window.artBank?.recordError) return;
+  clearTimeout(reportClientError.timer);
+  reportClientError.timer = setTimeout(() => {
+    window.artBank.recordError({ level: "error", ...payload }).catch(() => null);
+  }, 250);
+}
+
 function showView(view, title) {
   const subtitles = {
-    dashboard: "Pulso da operação, integração Google, presença local e indicadores de acervo.",
-    batch: "Fluxo guiado para escanear, validar, revisar e publicar artes com segurança.",
-    artworks: "Banco visual com filtros, prévia rápida, histórico e ações de edição.",
-    drive: "Pastas por tema, estrutura do acervo e sincronização com a raiz do Drive.",
-    finance: "Monte pedidos por cliente, adicione artes por ID e gere lançamento operacional.",
-    reservations: "Separe IDs antes da produção para evitar conflito entre operadores.",
-    users: "Controle de equipe, perfis de acesso e status dos operadores.",
-    audit: "Registro de ações, rastreabilidade e conferência da operação.",
-    settings: "Parâmetros de integração, caminhos locais, regras e manutenção do sistema."
+    dashboard: "Acompanhe artes, IDs, Drive, pedidos e equipe em um painel com aparência de catálogo premium.",
+    batch: "Lotes com Photoshop, Drive e Supabase, mantendo validação de arquivos, IDs e envio oficial.",
+    artworks: "Acervo de artes com prévias, códigos, filtros, edição e ações administrativas.",
+    drive: "Estrutura de temas no Google Drive com busca, contagem de imagens e acesso rápido.",
+    finance: "Monte pedidos por cliente, adicione artes por ID e gere o lançamento operacional.",
+    reservations: "Trave sequências antes do cadastro para evitar conflito entre operadores.",
+    users: "Perfis, permissões e presença da equipe com controle interno de acesso.",
+    audit: "Rastreabilidade das ações críticas sem poluir a operação principal.",
+    settings: "Conexões, pastas locais, cache, Photoshop e regras do sistema."
+  };
+  const titles = {
+    dashboard: "Operação visual da Armazém.",
+    batch: "Lotes com Photoshop, Drive e Supabase.",
+    artworks: "Acervo de artes em vitrine operacional.",
+    drive: "Temas locais e nuvem organizados.",
+    finance: "Pedidos por cliente e IDs.",
+    reservations: "Reserva segura de sequência.",
+    users: "Equipe, perfis e permissões.",
+    audit: "Timeline de ações críticas.",
+    settings: "Sistema e integrações."
   };
   $$(".nav-item").forEach((item) => item.classList.toggle("active", item.dataset.view === view));
   $$(".view").forEach((panel) => panel.classList.remove("active"));
   $(`#${view}View`).classList.add("active");
-  $("#viewTitle").textContent = title;
+  if ($("#viewEyebrow")) $("#viewEyebrow").textContent = title;
+  $("#viewTitle").textContent = titles[view] || title;
   if ($("#viewSubtitle")) $("#viewSubtitle").textContent = subtitles[view] || "Visão operacional do Banco de Artes.";
 }
 
@@ -317,7 +401,7 @@ async function refreshAll() {
       refreshAudit()
     ]);
 
-    await scanConfiguredFolders(false);
+    clearBatch();
     window.artBank.getProvisioningPlan().then(plan => renderProvisioningPlan(plan));
   } finally {
     if (syncBtnSpan) syncBtnSpan.textContent = originalText;
@@ -326,23 +410,11 @@ async function refreshAll() {
 }
 
 function renderExternalLinks() {
-  const sheetId = state.config?.operationalSpreadsheetId;
-  const baseSheetId = state.config?.baseSpreadsheetId;
-
   const dashLinks = [];
-  if (sheetId) dashLinks.push({ label: "Planilha de Artes", url: `https://docs.google.com/spreadsheets/d/${sheetId}`, icon: '<svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zM6 20V4h7v5h5v11H6z"/><path d="M8 13h8v2H8zm0 4h5v2H8z"/></svg>' });
-  if (baseSheetId) dashLinks.push({ label: "Planilha Central", url: `https://docs.google.com/spreadsheets/d/${baseSheetId}`, icon: '<svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zM6 20V4h7v5h5v11H6z"/><path d="M8 13h8v2H8zm0 4h5v2H8z"/></svg>' });
 
   const dashEl = $("#dashboardLinks");
   if (dashEl) {
      dashEl.innerHTML = dashLinks.map(l => `<a class="link-card" href="#" data-external="${escapeHtml(l.url)}">${l.icon}<span>${escapeHtml(l.label)}</span></a>`).join("");
-  }
-
-  const artLinks = [];
-  if (sheetId) artLinks.push({ label: "Abrir Planilha", url: `https://docs.google.com/spreadsheets/d/${sheetId}`, icon: '<svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zM6 20V4h7v5h5v11H6z"/><path d="M8 13h8v2H8zm0 4h5v2H8z"/></svg>' });
-  const artEl = $("#artworksLinks");
-  if(artEl) {
-      artEl.innerHTML = artLinks.map(l => `<a class="link-card" href="#" data-external="${escapeHtml(l.url)}">${l.icon}<span>${escapeHtml(l.label)}</span></a>`).join("");
   }
 
   $$("[data-external]").forEach(el => el.addEventListener("click", (e) => {
@@ -377,12 +449,13 @@ function readSettingsForm() {
     panel50DriveLocalRoot: form.elements.panel50DriveLocalRoot?.value.trim(),
     panel50MockupPath: form.elements.panel50MockupPath?.value.trim(),
     credentialsPath: form.elements.credentialsPath?.value.trim(),
-    baseSpreadsheetName: form.elements.baseSpreadsheetName?.value.trim(),
-    baseSpreadsheetId: form.elements.baseSpreadsheetId?.value.trim(),
-    operationalSpreadsheetId: form.elements.operationalSpreadsheetId?.value.trim(),
-    cadastroSheetName: form.elements.cadastroSheetName?.value.trim(),
-    operationalLogsSheetName: form.elements.operationalLogsSheetName?.value.trim(),
     driveFolderName: form.elements.driveFolderName?.value.trim(),
+    supabaseEnabled: form.elements.supabaseEnabled?.checked,
+    supabaseUrl: form.elements.supabaseUrl?.value.trim(),
+    supabasePublishableKey: form.elements.supabasePublishableKey?.value.trim(),
+    supabaseReadMode: form.elements.supabaseReadMode?.value || "supabase",
+    supabaseAuthMode: form.elements.supabaseAuthMode?.value || "local",
+    supabaseAuthEmailDomain: form.elements.supabaseAuthEmailDomain?.value.trim() || "bancodeartes.local",
     financialClientRoot: form.elements.financialClientRoot?.value.trim(),
     localImageFolders: lines(form.elements.localImageFolders?.value),
     validProducts: lines(form.elements.validProducts?.value).map((item) => item.toUpperCase()),
@@ -411,45 +484,14 @@ async function saveSettings(event) {
   }
 }
 
-async function validateOperationalSheet() {
-  const form = $("#settingsForm");
-  const status = $("#sheetValidationStatus");
-  if (!status) return;
-  status.textContent = "Testando...";
-  status.className = "inline-status";
-  try {
-    const result = await window.artBank.validateOperationalSpreadsheet(form.elements.operationalSpreadsheetId.value.trim());
-    if (result.hasCadastro && result.detectedCadastroName) {
-      form.elements.cadastroSheetName.value = result.detectedCadastroName;
-      state.config = await window.artBank.saveConfig({
-        ...readSettingsForm(),
-        operationalSpreadsheetId: form.elements.operationalSpreadsheetId.value.trim(),
-        cadastroSheetName: result.detectedCadastroName,
-      });
-      fillSettingsForm();
-    }
-    setTimeout(() => {
-      status.textContent = result.hasCadastro ? `✓ Conectada` : `Erro (Sem aba)`;
-      status.classList.add(result.hasCadastro ? "ok" : "warn");
-      toast(result.message);
-    }, 1200);
-  } catch (error) {
-    setTimeout(() => {
-      status.textContent = "Erro";
-      status.classList.add("error");
-      toast(error.message);
-    }, 1200);
-  }
-}
-
 async function testConnectivity() {
   const box = $("#connectivityResults");
-  const status = $("#sheetValidationStatus");
+  const status = $("#connectionValidationStatus");
   if (status) {
     status.textContent = "Testando tudo...";
     status.className = "inline-status";
   }
-  if (box) box.innerHTML = `<div class="diagnostic-item"><strong>Executando diagnóstico</strong><span>Conferindo token, planilhas, abas e Drive.</span></div>`;
+  if (box) box.innerHTML = `<div class="diagnostic-item"><strong>Executando diagnóstico</strong><span>Conferindo login, Supabase e Drive.</span></div>`;
   try {
     const result = await window.artBank.testConnectivity();
     if (box) {
@@ -475,21 +517,34 @@ async function testConnectivity() {
   }
 }
 
+async function refreshSupabaseStatus() {
+  const box = $("#supabaseStatusBox");
+  if (!box || !window.artBank.supabaseStatus) return;
+  const result = await window.artBank.supabaseStatus();
+  box.className = `diagnostic-item ${result.ok ? "ok" : (result.enabled ? "warn" : "")}`;
+  box.innerHTML = `
+    <strong>${result.ok ? "Supabase pronto" : "Supabase em preparação"}</strong>
+    <span>${escapeHtml(result.message)}${result.url ? ` · ${escapeHtml(result.url)}` : ""}</span>
+  `;
+}
+
 function renderConfig() {
   if($("#noticeText")) {
+    const officialData = state.config.supabaseEnabled ? "Supabase" : "base local";
     $("#noticeText").textContent =
-      `Banco localizado em ${state.config.fixedDataFolder || "C:\\BancoDeArtes"}. Os dados oficiais estão no Sheets.`;
+      `Banco localizado em ${state.config.fixedDataFolder || "C:\\BancoDeArtes"}. Dados oficiais: ${officialData}.`;
   }
+  refreshSupabaseStatus().catch(() => null);
 }
 
 async function refreshAuthStatus() {
   const status = await window.artBank.getAuthStatus();
   setTextAll(".metric-google-status", status.authenticated ? "OK" : "OFF");
-  setTextAll(".metric-google-sub", status.authenticated ? "conectado" : "ação necessária");
+  setTextAll(".metric-google-sub", status.authenticated ? "Drive conectado" : "ação necessária");
   if ($("#authButton")) $("#authButton").textContent = status.authenticated ? "Google conectado" : "Conectar Google";
   if ($("#googleBadge")) $("#googleBadge").textContent = status.authenticated ? "Token válido" : "Sem token válido";
   if ($("#connectionMessage")) $("#connectionMessage").textContent = status.authenticated
-    ? (status.missingScopes?.length ? `Faltam permissões: ${status.missingScopes.length}. Reconecte o Google.` : "Conta conectada. Planilhas ativas.")
+    ? (status.missingScopes?.length ? `Faltam permissões: ${status.missingScopes.length}. Reconecte o Google.` : "Conta conectada. Drive ativo.")
     : status.message || "Conecte uma conta Google.";
   if ($("#tokenPathBox")) $("#tokenPathBox").textContent = `Token: ${status.tokenPath || "-"}
 Credencial: ${status.credentialsPath || "-"}`;
@@ -568,19 +623,49 @@ function nextAvailableDashboardId(maxId) {
 }
 
 function renderProvisioningPlan(plan) {
-  const items = [
-    ["Planilha central", plan.baseSpreadsheet.mode, plan.baseSpreadsheet.id || plan.baseSpreadsheet.name],
-    ["Planilha de artes", plan.operationalSpreadsheet.mode, plan.operationalSpreadsheet.id || "Defina ou crie no Google"],
-    ["Pasta Drive", plan.driveFolder.mode, plan.driveFolder.name],
-  ];
+  const usesSupabaseOfficial = state.config?.supabaseEnabled && state.config?.supabaseReadMode === "supabase";
+  const items = usesSupabaseOfficial
+    ? [
+      ["Base oficial", "use-existing", "Supabase"],
+      ["Pasta Drive", plan.driveFolder.mode, plan.driveFolder.name],
+    ]
+    : [
+      ["Base local", "use-existing", state.config?.fixedDataFolder || "C:\\BancoDeArtes"],
+      ["Pasta Drive", plan.driveFolder.mode, plan.driveFolder.name],
+    ];
+  const modeLabel = (mode) => ({
+    "use-existing": "Existente",
+    "find-or-create": "Buscar/criar",
+    "create": "Criar",
+    "missing": "Pendente",
+  }[mode] || mode || "-");
   if($("#provisioningPlan")) {
     $("#provisioningPlan").innerHTML = items.map(([label, mode, value]) => `
-      <div class="plan-item"><strong>${escapeHtml(label)}</strong><span>${escapeHtml(value)}</span><span class="badge">${escapeHtml(mode)}</span></div>
+      <div class="plan-item provisioning-item">
+        <strong>${escapeHtml(label)}</strong>
+        <span class="provisioning-value" title="${escapeHtml(value)}">${escapeHtml(value)}</span>
+        <span class="badge provisioning-status" title="${escapeHtml(mode)}">${escapeHtml(modeLabel(mode))}</span>
+      </div>
     `).join("");
   }
 }
 
+function renderListSkeleton(selector, count = 4) {
+  const box = $(selector);
+  if (!box) return;
+  box.innerHTML = Array.from({ length: count }).map(() => `
+    <div class="reservation-row skeleton-card skeleton-list-item" aria-hidden="true">
+      <div>
+        <div class="skeleton skeleton-line wide"></div>
+        <div class="skeleton skeleton-line"></div>
+      </div>
+      <div class="skeleton skeleton-line short"></div>
+    </div>
+  `).join("");
+}
+
 async function refreshPresence() {
+  renderListSkeleton("#onlineList", 3);
   state.online = await window.artBank.onlineUsers();
   if($("#onlineCount")) $("#onlineCount").textContent = `${state.online.length} online`;
   if($("#onlineList")) {
@@ -592,6 +677,7 @@ async function refreshPresence() {
 
 // ---- USUÁRIOS LOGIC ----
 async function refreshUsers() {
+  renderListSkeleton("#userList", 5);
   state.users = await window.artBank.listUsers();
   renderUserCards();
 }
@@ -759,6 +845,7 @@ async function deleteSelectedUser(loginId) {
 // ---- BATCH LOGIC ----
 
 async function refreshReservations() {
+  renderListSkeleton("#reservationList", 4);
   state.reservations = await window.artBank.listReservations();
   const reservedIds = state.reservations.reduce((sum, item) => sum + item.ids.length, 0);
   if($("#metricReserved")) $("#metricReserved").textContent = reservedIds;
@@ -800,6 +887,7 @@ async function createReservation(event) {
 }
 
 async function refreshLocks() {
+  renderListSkeleton("#lockList", 2);
   let locks;
   try {
     locks = await window.artBank.lockStatus();
@@ -817,6 +905,7 @@ async function refreshLocks() {
 }
 
 async function refreshAudit() {
+  renderListSkeleton("#auditRows", 5);
   const rows = await window.artBank.auditList().catch(() => []);
   if($("#auditRows")) {
     $("#auditRows").innerHTML = rows.map((row) => `
@@ -828,7 +917,13 @@ async function refreshAudit() {
 async function refreshDriveFolders(refresh = false) {
   const list = $("#driveFolderList");
   if (list) {
-    list.innerHTML = `<div class="table-loading"><div class="spinner small"></div><span>${refresh ? "Sincronizando e limpando duplicadas..." : "Carregando pastas..."}</span></div>`;
+    list.innerHTML = Array.from({ length: 8 }).map(() => `
+      <article class="drive-card skeleton-card" aria-hidden="true">
+        <div class="skeleton skeleton-line wide"></div>
+        <div class="skeleton skeleton-line"></div>
+        <div class="skeleton skeleton-line short"></div>
+      </article>
+    `).join("");
   }
   try {
     state.driveFolders = await window.artBank.listDriveFolders(Boolean(refresh));
@@ -874,30 +969,38 @@ function openDriveRoot() {
 
 async function refreshArtworks(options = {}) {
   const { force = false, showLoading = false } = options;
+  if (showLoading || force) startActionProgress("Carregando banco visual", "Lendo base oficial e cache.", 12);
   if (showLoading && $("#artworkRows")) {
-    $("#artworkRows").innerHTML = `<tr><td colspan="9"><div class="table-loading"><div class="spinner small"></div><span>Atualizando direto da planilha...</span></div></td></tr>`;
+    renderArtworkSkeleton();
   }
   if (force) {
+    updateActionProgress(32, "Sincronizando cache local.");
     state.cache = await window.artBank.runSync().catch(() => state.cache);
   }
+  updateActionProgress(58, "Carregando artes cadastradas.");
   state.artworks = await window.artBank.listArtworks().catch((error) => {
-    if($("#artworkRows")) $("#artworkRows").innerHTML = `<tr><td colspan="9">${escapeHtml(friendlyError(error.message))}</td></tr>`;
+    if($("#artworkRows")) $("#artworkRows").innerHTML = `<tr><td colspan="10">${escapeHtml(friendlyError(error.message))}</td></tr>`;
+    if ($("#artworkCardGrid")) $("#artworkCardGrid").innerHTML = `<div class="empty-state-block">Falha ao carregar: ${escapeHtml(friendlyError(error.message))}</div>`;
     toast(error.message);
+    if (showLoading || force) finishActionProgress("Falha ao carregar banco visual.");
     return [];
   });
   if (!state.artworks.length) {
-    if($("#artworkRows")) $("#artworkRows").innerHTML = `<tr><td colspan="9">Nenhuma arte carregada.</td></tr>`;
+    if($("#artworkRows")) $("#artworkRows").innerHTML = `<tr><td colspan="10">Nenhuma arte carregada.</td></tr>`;
+    if ($("#artworkCardGrid")) $("#artworkCardGrid").innerHTML = `<div class="empty-state-block">Nenhuma arte carregada.</div>`;
+    if (showLoading || force) finishActionProgress("Nenhuma arte carregada.");
     return;
   }
   populateArtworkFilters();
   renderFilteredArtworks();
+  if (showLoading || force) finishActionProgress("Banco visual carregado.");
 }
 
 function populateArtworkFilters() {
   const themes = new Set();
   const products = new Set();
   const users = new Set();
-  state.artworks.forEach((art) => {
+  state.artworks.filter(isArtworkCatalogVisible).forEach((art) => {
     if (art.theme) themes.add(art.theme);
     if (art.product) products.add(art.product);
     if (art.user) users.add(art.user);
@@ -917,6 +1020,7 @@ function renderFilteredArtworks() {
   const user = $("#artworkFilterUser")?.value || "all";
   state.artworkSort = $("#artworkSort")?.value || state.artworkSort || "desc";
   const filtered = state.artworks.filter((art) => {
+    if (!isArtworkCatalogVisible(art)) return false;
     if (query && !(art.id||"").toString().toLowerCase().includes(query) && !(art.theme||"").toLowerCase().includes(query) && !(art.product||"").toLowerCase().includes(query) && !(art.user||"").toLowerCase().includes(query)) return false;
     if (theme !== "all" && String(art.theme||"") !== theme) return false;
     if (product !== "all" && String(art.product||"") !== product) return false;
@@ -927,29 +1031,137 @@ function renderFilteredArtworks() {
     const right = Number(b.id || 0);
     return state.artworkSort === "asc" ? left - right : right - left;
   });
+  state.visibleArtworkIds = filtered.map((art) => String(art.id));
+  syncArtworkViewMode();
+  const mode = currentArtworkViewMode();
   if (!filtered.length) {
-    if($("#artworkRows")) $("#artworkRows").innerHTML = `<tr><td colspan="9" style="text-align:center;padding:20px;color:var(--text-3)">Nenhuma arte corresponde aos filtros.</td></tr>`;
+    if($("#artworkRows")) $("#artworkRows").innerHTML = `<tr><td colspan="10" style="text-align:center;padding:20px;color:var(--text-3)">Nenhuma arte corresponde aos filtros.</td></tr>`;
+    if ($("#artworkCardGrid")) $("#artworkCardGrid").innerHTML = `<div class="empty-state-block">Nenhuma arte corresponde aos filtros.</div>`;
+    syncArtworkBulkControls();
     return;
   }
-  if($("#artworkRows")) {
-    $("#artworkRows").innerHTML = filtered.map((art) => `
-      <tr data-art-row="${escapeHtml(art.id)}">
-        <td>${artThumb(art.url)}</td>
-        <td>${escapeHtml(art.id)}</td>
-        <td>${artCell(art.id, "theme", art.theme)}</td>
-        <td>${artCell(art.id, "product", art.product)}</td>
-        <td>${artCell(art.id, "size", art.size)}</td>
-        <td>${artCell(art.id, "client", art.client)}</td>
-        <td>${artCell(art.id, "user", art.user)}</td>
-        <td>${escapeHtml(art.date || "-")}</td>
-        <td>${artActions(art.id)}</td>
-      </tr>
-    `).join("");
+  if (mode === "cards") {
+    renderArtworkCards(filtered);
+    if ($("#artworkRows")) $("#artworkRows").innerHTML = "";
+  } else {
+    if ($("#artworkCardGrid")) $("#artworkCardGrid").innerHTML = "";
+    renderArtworkTable(filtered);
   }
-  $$("[data-preview-drive]").forEach((button) => button.addEventListener("click", () => openDrivePreview(button.dataset.previewDrive)));
-  $$("[data-art-field]").forEach((input) => input.addEventListener("change", () => input.classList.add("dirty")));
+  $$("[data-preview-drive]").forEach((button) => button.addEventListener("click", () => {
+    const art = state.artworks.find((item) => String(item.id) === String(button.dataset.previewId));
+    openDrivePreview(button.dataset.previewDrive, art);
+  }));
+  $$("[data-select-art]").forEach((input) => input.addEventListener("change", () => {
+    const id = String(input.dataset.selectArt);
+    if (input.checked) state.artworkSelection.add(id);
+    else state.artworkSelection.delete(id);
+    syncArtworkBulkControls();
+  }));
+  $$("[data-art-field]").forEach((input) => input.addEventListener("input", () => {
+    input.classList.add("dirty");
+    input.closest("tr")?.classList.add("has-dirty-fields");
+    syncArtworkBulkControls();
+  }));
   $$("[data-save-art]").forEach((button) => button.addEventListener("click", () => saveArtworkEdit(button.dataset.saveArt)));
   $$("[data-delete-art]").forEach((button) => button.addEventListener("click", () => deleteArtwork(button.dataset.deleteArt)));
+  $$("[data-find-art]").forEach((button) => button.addEventListener("click", () => openFindArtworkModal(button.dataset.findArt)));
+  $$("[data-refresh-art-url]").forEach((button) => button.addEventListener("click", () => refreshArtworkUrl(button.dataset.refreshArtUrl)));
+  syncArtworkBulkControls();
+}
+
+function isArtworkCatalogVisible(art) {
+  return String(art?.status || "active").toLowerCase() !== "trash";
+}
+
+function renderArtworkTable(artworks) {
+  const rows = $("#artworkRows");
+  if (!rows) return;
+  rows.innerHTML = artworks.map((art) => `
+    <tr data-art-row="${escapeHtml(art.id)}" class="${state.artworkSelection.has(String(art.id)) ? "is-selected" : ""}">
+      <td class="art-select-cell"><input type="checkbox" data-select-art="${escapeHtml(art.id)}" ${state.artworkSelection.has(String(art.id)) ? "checked" : ""} aria-label="Selecionar arte ${escapeHtml(art.id)}" /></td>
+      <td>${artThumb(art)}</td>
+      <td>${escapeHtml(art.id)}</td>
+      <td>${artCell(art.id, "theme", art.theme)}</td>
+      <td>${artCell(art.id, "product", art.product)}</td>
+      <td>${artCell(art.id, "size", art.size)}</td>
+      <td>${artCell(art.id, "client", art.client)}</td>
+      <td>${artCell(art.id, "user", art.user)}</td>
+      <td>${escapeHtml(art.date || "-")}</td>
+      <td>${artActions(art.id)}</td>
+    </tr>
+  `).join("");
+}
+
+function currentArtworkViewMode() {
+  return state.artworkTools ? "table" : state.artworkViewMode;
+}
+
+function syncArtworkViewMode() {
+  const mode = currentArtworkViewMode();
+  $("#artworkCardGrid")?.classList.toggle("hidden", mode !== "cards");
+  $("#artworkTableWrap")?.classList.toggle("hidden", mode !== "table");
+  $$("[data-artwork-view-mode]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.artworkViewMode === state.artworkViewMode);
+    button.disabled = state.artworkTools && button.dataset.artworkViewMode === "cards";
+  });
+}
+
+function renderArtworkSkeleton() {
+  if ($("#artworkCardGrid")) {
+    $("#artworkCardGrid").innerHTML = Array.from({ length: 10 }).map(() => `
+      <article class="artwork-card skeleton-card" aria-hidden="true">
+        <div class="skeleton skeleton-thumb"></div>
+        <div class="skeleton skeleton-line wide"></div>
+        <div class="skeleton skeleton-line"></div>
+        <div class="skeleton skeleton-line short"></div>
+      </article>
+    `).join("");
+  }
+  if ($("#artworkRows")) {
+    $("#artworkRows").innerHTML = Array.from({ length: 6 }).map(() => `
+      <tr class="skeleton-row"><td colspan="10"><div class="skeleton skeleton-line wide"></div></td></tr>
+    `).join("");
+  }
+  syncArtworkViewMode();
+}
+
+function renderArtworkCards(artworks) {
+  const grid = $("#artworkCardGrid");
+  if (!grid) return;
+  grid.innerHTML = artworks.map((art) => {
+    const preview = imagePreviewUrl(art.url);
+    return `
+      <article class="artwork-card" data-art-card="${escapeHtml(art.id)}">
+        <button class="artwork-card-preview ${preview ? "" : "is-empty"}" type="button" ${preview ? `data-preview-drive="${escapeHtml(art.url)}" data-preview-id="${escapeHtml(art.id)}"` : ""} aria-label="Abrir prévia da arte ${escapeHtml(art.id)}">
+          ${preview ? `<img src="${escapeHtml(preview)}" alt="Prévia da arte ${escapeHtml(art.id)}" loading="lazy" onload="markArtworkImageLoaded('${escapeHtml(art.id)}')" onerror="markArtworkImageBroken('${escapeHtml(art.id)}', this.parentElement);this.remove();" />` : `<span>Sem prévia</span>`}
+          <span class="artwork-card-id">#${escapeHtml(art.id || "-")}</span>
+        </button>
+        <div class="artwork-card-body">
+          <strong title="${escapeHtml(art.theme || "Sem tema")}">${escapeHtml(art.theme || "Sem tema")}</strong>
+          <span>${escapeHtml(art.product || "Sem produto")} · ${escapeHtml(art.size || "Sem tamanho")}</span>
+          <div class="artwork-card-meta">
+            <small>${escapeHtml(art.client || "Sem cliente")}</small>
+            <small>${escapeHtml(art.date || "-")}</small>
+          </div>
+        </div>
+      </article>
+    `;
+  }).join("");
+}
+
+function markArtworkImageBroken(id, previewButton) {
+  state.brokenArtworkImageIds.add(String(id));
+  previewButton?.classList.add("is-empty", "has-image-error");
+  if (previewButton && !previewButton.querySelector(".artwork-image-error")) {
+    const message = document.createElement("span");
+    message.className = "artwork-image-error";
+    message.textContent = "Imagem indisponível";
+    previewButton.appendChild(message);
+  }
+}
+
+function markArtworkImageLoaded(id) {
+  state.brokenArtworkImageIds.delete(String(id));
 }
 
 function toggleArtworkTools() {
@@ -960,6 +1172,10 @@ function toggleArtworkTools() {
   state.artworkTools = !state.artworkTools;
   $("#artworkToolsButton")?.classList.toggle("active", state.artworkTools);
   $("#artworksView")?.classList.toggle("editing", state.artworkTools);
+  $("#saveAllArtworksButton")?.classList.toggle("hidden", !state.artworkTools);
+  $("#deleteSelectedArtworksButton")?.classList.toggle("hidden", !state.artworkTools);
+  if (!state.artworkTools) state.artworkSelection.clear();
+  syncArtworkViewMode();
   renderFilteredArtworks();
   toast(state.artworkTools ? "Edição e exclusão de artes ativadas." : "Ferramentas de artes desativadas.");
 }
@@ -975,7 +1191,13 @@ function artEditInput(id, field, value) {
 
 function artActions(id) {
   if (!state.artworkTools) return `<span class="muted">-</span>`;
-  return `<div class="row-actions">
+  return `<div class="row-actions artwork-actions">
+    <button class="icon-btn" data-find-art="${escapeHtml(id)}" title="Encontrar arquivos locais" aria-label="Encontrar arquivos locais">
+      <svg viewBox="0 0 24 24"><path d="M10 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-8l-2-2zm2 10h2v2h-2v2l-4-3 4-3v2h5v2h-5v-2z"/></svg>
+    </button>
+    <button class="icon-btn" data-refresh-art-url="${escapeHtml(id)}" title="Atualizar URL pelo Drive" aria-label="Atualizar URL pelo Drive">
+      <svg viewBox="0 0 24 24"><path d="M17.65 6.35A7.95 7.95 0 0 0 12 4V1L7 6l5 5V7a5 5 0 1 1-4.9 6H4.05a8 8 0 1 0 13.6-6.65z"/></svg>
+    </button>
     <button class="icon-btn" data-save-art="${escapeHtml(id)}" title="Salvar alterações" aria-label="Salvar alterações">
       <svg viewBox="0 0 24 24"><path d="M17 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V7l-4-4zM12 19a3 3 0 1 1 0-6 3 3 0 0 1 0 6zM6 8V5h9v3H6z"/></svg>
     </button>
@@ -985,7 +1207,7 @@ function artActions(id) {
   </div>`;
 }
 
-async function saveArtworkEdit(id) {
+async function saveArtworkEdit(id, options = {}) {
   const row = $(`[data-art-row="${CSS.escape(String(id))}"]`);
   if (!row) return;
   const payload = { id };
@@ -993,24 +1215,54 @@ async function saveArtworkEdit(id) {
     payload[input.dataset.artField] = input.value;
   });
   const button = row.querySelector("[data-save-art]");
-  const original = button?.textContent || "Salvar";
   try {
+    if (options.showProgress !== false) startActionProgress(`Salvando ID ${id}`, "Gravando na base oficial.", 14);
     if (button) {
       button.disabled = true;
-      button.textContent = "Salvando...";
+      button.classList.add("is-loading");
     }
+    updateActionProgress(42, "Enviando alterações para a base oficial.");
     const updated = await window.artBank.updateArtwork(payload);
+    updateActionProgress(72, "Confirmando gravação e atualizando cache.");
     state.artworks = state.artworks.map((art) => String(art.id) === String(id) ? { ...art, ...updated } : art);
     row.querySelectorAll(".dirty").forEach((input) => input.classList.remove("dirty"));
+    row.classList.remove("has-dirty-fields");
+    syncArtworkBulkControls();
+    if (options.syncAfter !== false) state.cache = await window.artBank.runSync().catch(() => state.cache);
     await refreshDashboardData();
-    toast(`Arte ${id} atualizada na planilha.`);
+    if (options.showProgress !== false) finishActionProgress(`ID ${id} salvo.`);
+    toast(`Arte ${id} atualizada na base oficial.`);
   } catch (error) {
+    if (options.showProgress !== false) finishActionProgress("Falha ao salvar.");
     toast(error.message);
   } finally {
     if (button) {
       button.disabled = false;
-      button.textContent = original;
+      button.classList.remove("is-loading");
     }
+  }
+}
+
+async function saveAllArtworkEdits() {
+  const rows = $$("[data-art-row].has-dirty-fields");
+  if (!rows.length) return toast("Nenhuma alteração pendente.");
+  const button = $("#saveAllArtworksButton");
+  try {
+    if (button) button.disabled = true;
+    startActionProgress("Salvando alterações", `${rows.length} linha(s) pendente(s).`, 10);
+    let saved = 0;
+    for (const row of rows) {
+      updateActionProgress(10 + Math.round((saved / rows.length) * 70), `Salvando ID ${row.dataset.artRow}.`);
+      await saveArtworkEdit(row.dataset.artRow, { syncAfter: false, showProgress: false });
+      saved += 1;
+    }
+    updateActionProgress(84, "Sincronizando cache.");
+    state.cache = await window.artBank.runSync().catch(() => state.cache);
+    await refreshArtworks({ force: true });
+    finishActionProgress("Alterações salvas.");
+    toast(`${saved} arte(s) salva(s) na base oficial.`);
+  } finally {
+    if (button) button.disabled = false;
   }
 }
 
@@ -1020,18 +1272,206 @@ async function deleteArtwork(id) {
   const label = art ? `${art.id} - ${art.theme}` : `ID ${id}`;
   const confirmed = await confirmAction({
     title: "Excluir arte",
-    message: `Excluir a arte ${label} da planilha? Esta ação remove a linha da aba de artes.`,
+    message: `Excluir a arte ${label} da base oficial?`,
     destructive: true,
   });
   if (!confirmed) return;
   try {
+    startActionProgress(`Excluindo ID ${id}`, "Removendo da base oficial.", 18);
     await window.artBank.deleteArtwork({ id });
+    updateActionProgress(70, "Atualizando cache local.");
     state.artworks = state.artworks.filter((item) => String(item.id) !== String(id));
+    state.cache = await window.artBank.runSync().catch(() => state.cache);
     renderFilteredArtworks();
     await refreshDashboardData();
-    toast(`Arte ${id} excluída da planilha.`);
+    finishActionProgress("Arte excluída.");
+    toast(`Arte ${id} excluída da base oficial.`);
   } catch (error) {
+    finishActionProgress("Falha ao excluir.");
     toast(error.message);
+  }
+}
+
+async function deleteSelectedArtworks() {
+  if (!state.artworkTools) return;
+  const ids = [...state.artworkSelection];
+  if (!ids.length) return toast("Selecione uma ou mais artes.");
+  const confirmed = await confirmAction({
+    title: "Excluir artes selecionadas",
+    message: `Excluir ${ids.length} arte(s) da base oficial?`,
+    destructive: true,
+  });
+  if (!confirmed) return;
+  const button = $("#deleteSelectedArtworksButton");
+  try {
+    if (button) button.disabled = true;
+    startActionProgress("Excluindo selecionadas", `${ids.length} arte(s) selecionada(s).`, 10);
+    let deleted = 0;
+    for (const id of ids) {
+      updateActionProgress(10 + Math.round((deleted / ids.length) * 72), `Excluindo ID ${id}.`);
+      await window.artBank.deleteArtwork({ id });
+      state.artworks = state.artworks.filter((item) => String(item.id) !== String(id));
+      state.artworkSelection.delete(String(id));
+      deleted += 1;
+    }
+    updateActionProgress(88, "Sincronizando cache.");
+    state.cache = await window.artBank.runSync().catch(() => state.cache);
+    renderFilteredArtworks();
+    await refreshDashboardData();
+    finishActionProgress("Artes excluídas.");
+    toast(`${ids.length} arte(s) excluída(s).`);
+  } catch (error) {
+    finishActionProgress("Falha ao excluir.");
+    toast(error.message);
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+function toggleAllVisibleArtworks(event) {
+  if (!state.artworkTools) {
+    event.currentTarget.checked = false;
+    return;
+  }
+  const checked = event.currentTarget.checked;
+  (state.visibleArtworkIds || []).forEach((id) => {
+    if (checked) state.artworkSelection.add(String(id));
+    else state.artworkSelection.delete(String(id));
+  });
+  renderFilteredArtworks();
+}
+
+function syncArtworkBulkControls() {
+  const selected = state.artworkSelection.size;
+  const dirty = $$("[data-art-row].has-dirty-fields").length;
+  const deleteButton = $("#deleteSelectedArtworksButton");
+  const saveButton = $("#saveAllArtworksButton");
+  if (deleteButton) {
+    deleteButton.disabled = !state.artworkTools || selected === 0;
+    const label = deleteButton.querySelector("span");
+    if (label) label.textContent = selected ? `Excluir ${selected}` : "Excluir selecionadas";
+  }
+  if (saveButton) {
+    saveButton.disabled = !state.artworkTools || dirty === 0;
+    const label = saveButton.querySelector("span");
+    if (label) label.textContent = dirty ? `Salvar ${dirty}` : "Salvar tudo";
+  }
+  const selectAll = $("#selectAllArtworks");
+  if (selectAll) {
+    const visible = state.visibleArtworkIds || [];
+    selectAll.disabled = !state.artworkTools || !visible.length;
+    selectAll.checked = Boolean(visible.length) && visible.every((id) => state.artworkSelection.has(String(id)));
+  }
+}
+
+function openFindArtworkModal(id) {
+  state.currentFindArtworkId = String(id || "");
+  const art = state.artworks.find((item) => String(item.id) === state.currentFindArtworkId);
+  if ($("#findArtworkTitle")) $("#findArtworkTitle").textContent = `Encontrar ID ${state.currentFindArtworkId}`;
+  if ($("#findArtworkMeta")) $("#findArtworkMeta").textContent = art ? `${art.theme || "Sem tema"} · ${art.product || "Sem produto"}` : "Escolha onde procurar este ID.";
+  $("#findArtworkModal")?.classList.remove("hidden");
+}
+
+function closeFindArtworkModal() {
+  $("#findArtworkModal")?.classList.add("hidden");
+  state.currentFindArtworkId = "";
+}
+
+async function openArtworkLocation(type) {
+  const id = state.currentFindArtworkId;
+  if (!id) return;
+  try {
+    startActionProgress("Encontrando arte", type === "drive-local" ? "Procurando no Drive local." : "Procurando em artes locais.", 20);
+    const result = await window.artBank.openArtworkFolder({ type, id });
+    finishActionProgress("Pasta aberta.");
+    closeFindArtworkModal();
+    toast(`Pasta aberta: ${result.folder}`);
+  } catch (error) {
+    finishActionProgress("Não encontrado.");
+    toast(friendlyError(error.message));
+  }
+}
+
+async function refreshArtworkUrl(id, allowUpload = false) {
+  const art = state.artworks.find((item) => String(item.id) === String(id));
+  if (!art) return toast(`Arte ${id} não encontrada na tabela.`);
+  const button = $(`[data-refresh-art-url="${CSS.escape(String(id))}"]`);
+  try {
+    startActionProgress(`Atualizando thumb ${id}`, allowUpload ? "Subindo arquivo e gravando URL." : "Procurando imagem no Drive.", 12);
+    if (button) {
+      button.disabled = true;
+      button.classList.add("is-loading");
+    }
+    updateActionProgress(38, "Consultando Drive.");
+    const result = await window.artBank.refreshArtworkUrl({ ...art, allowUpload });
+    if (result.needsUpload) {
+      finishActionProgress("Imagem não encontrada no Drive.");
+      const confirmed = await confirmAction({
+        title: "Imagem não encontrada no Drive",
+        message: `${result.message} Posso subir o arquivo local correspondente e atualizar a base oficial?`,
+      });
+      if (!confirmed) return;
+      return refreshArtworkUrl(id, true);
+    }
+    updateActionProgress(72, "Atualizando visualização e cache.");
+    state.artworks = state.artworks.map((item) => String(item.id) === String(id) ? { ...item, ...result } : item);
+    state.brokenArtworkImageIds.delete(String(id));
+    state.cache = await window.artBank.runSync().catch(() => state.cache);
+    renderFilteredArtworks();
+    finishActionProgress("Thumb atualizada.");
+    toast(result.uploaded ? `Arte ${id} enviada ao Drive e atualizada.` : `URL da arte ${id} atualizada.`);
+  } catch (error) {
+    finishActionProgress("Falha ao atualizar thumb.");
+    toast(friendlyError(error.message));
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.classList.remove("is-loading");
+    }
+  }
+}
+
+function artworkNeedsImageRefresh(art) {
+  const preview = imagePreviewUrl(art?.url);
+  return !preview || !String(art?.url || "").trim() || state.brokenArtworkImageIds.has(String(art?.id));
+}
+
+async function refreshMissingArtworkImages() {
+  const button = $("#refreshMissingArtworkImagesButton");
+  const targets = (state.artworks || []).filter((art) => isArtworkCatalogVisible(art) && artworkNeedsImageRefresh(art));
+  if (!targets.length) {
+    toast("Todas as artes carregadas já têm imagem visível.");
+    return;
+  }
+  const confirmed = await confirmAction({
+    title: "Atualizar imagens do acervo",
+    message: `Vou tentar atualizar ${targets.length} arte(s) sem imagem visível. Isso pode levar alguns minutos.`,
+  });
+  if (!confirmed) return;
+  try {
+    if (button) button.disabled = true;
+    startActionProgress("Atualizando imagens", `${targets.length} arte(s) sem prévia.`, 8);
+    let updated = 0;
+    for (const art of targets) {
+      updateActionProgress(8 + Math.round((updated / targets.length) * 82), `Procurando imagem do ID ${art.id}.`);
+      try {
+        const result = await window.artBank.refreshArtworkUrl({ ...art, allowUpload: false });
+        if (!result.needsUpload) {
+          state.artworks = state.artworks.map((item) => String(item.id) === String(art.id) ? { ...item, ...result } : item);
+          state.brokenArtworkImageIds.delete(String(art.id));
+          updated += 1;
+        }
+      } catch (_) {
+        // Mantem o lote seguindo mesmo se uma arte especifica falhar.
+      }
+    }
+    updateActionProgress(94, "Sincronizando cache.");
+    state.cache = await window.artBank.runSync().catch(() => state.cache);
+    renderFilteredArtworks();
+    finishActionProgress("Atualização finalizada.");
+    toast(`${updated} imagem(ns) atualizada(s).`);
+  } finally {
+    if (button) button.disabled = false;
   }
 }
 
@@ -1048,6 +1488,10 @@ function bindFilters() {
   $("#artworkFilterProduct")?.addEventListener("change", renderFilteredArtworks);
   $("#artworkFilterUser")?.addEventListener("change", renderFilteredArtworks);
   $("#artworkSort")?.addEventListener("change", renderFilteredArtworks);
+  $$("[data-artwork-view-mode]").forEach((button) => button.addEventListener("click", () => {
+    state.artworkViewMode = button.dataset.artworkViewMode || "cards";
+    renderFilteredArtworks();
+  }));
   $("#artworkClearFilters")?.addEventListener("click", () => {
     $("#artworkSearch").value = "";
     $("#artworkFilterTheme").value = "all";
@@ -1067,16 +1511,24 @@ function bindFilters() {
   $("#driveSearch")?.addEventListener("input", renderDriveFolders);
 }
 
-async function chooseFolderAndScan() {
-  const folder = await window.artBank.chooseImageFolder();
-  if (!folder) return;
-  state.config = await window.artBank.saveConfig({ ...state.config, localImageFolders: [folder] });
-  fillSettingsForm();
-  await scanConfiguredFolders();
-}
-
 async function scanConfiguredFolders(showMessage = true) {
-  state.files = await window.artBank.scanImages();
+  const folders = selectedBatchFolders();
+  if (!folders.length) {
+    state.files = [];
+    state.rows = [];
+    renderRows();
+    setBatchActionStatus("Escolha uma pasta antes de validar o lote.");
+    if (showMessage) toast("Escolha uma pasta antes de validar o lote.");
+    return;
+  }
+  state.files = await window.artBank.scanImages(folders);
+  if (!state.files.length) {
+    state.rows = [];
+    renderRows();
+    setBatchActionStatus("Nenhuma imagem encontrada na pasta configurada.");
+    if (showMessage) toast("Nenhuma imagem encontrada na pasta configurada.");
+    return;
+  }
   await parseStandardRows();
   if (showMessage) toast(`${state.files.length} imagens encontradas.`);
 }
@@ -1114,6 +1566,8 @@ function validateRowLocal(row) {
    row.errors = [];
    if (!row.id) { isValid = false; row.errors.push("Falta ID."); }
    if (row.id && state.cache.artworksMap?.[row.id]) { isValid = false; row.errors.push("ID já existe na nuvem (Cache)."); }
+   if (row.reservationStatus === "outside") { isValid = false; row.errors.push("ID fora da reserva ativa."); }
+   if (row.reservationStatus === "missing") { isValid = false; row.errors.push("ID reservado ainda não informado."); }
    if (!row.theme) { isValid = false; row.errors.push("Falta Tema."); }
    if (!row.product) { isValid = false; row.errors.push("Falta Produto."); }
    return isValid;
@@ -1145,7 +1599,7 @@ function renderRows() {
 
   if (!filteredIndices.length && state.rows.length) {
     if($("#batchRows")) $("#batchRows").innerHTML = `<tr><td colspan="11" style="text-align:center;padding:16px;color:var(--text-3)">Nenhuma arte no lote corresponde.</td></tr>`;
-  } else {
+  } else if (filteredIndices.length) {
     if($("#batchRows")) {
       $("#batchRows").innerHTML = filteredIndices.map((index) => {
         const row = state.rows[index];
@@ -1154,16 +1608,18 @@ function renderRows() {
           <td>${status(row)}</td>
           <td>${batchThumbCell(row, index)}</td>
           <td title="${escapeHtml(row.path || "")}">${escapeHtml(row.fileName)}</td>
-          <td>${cell(index, "id", row.id, editable)}</td>
-          <td>${cell(index, "theme", row.theme, editable)}</td>
+          <td>${cell(index, "id", row.id, editable, row)}</td>
+          <td>${cell(index, "theme", row.theme, editable, row)}</td>
           <td>${productCell(index, row.product, editable, products)}</td>
           <td>${sizeCell(index, row.product, row.size, editable)}</td>
-          <td>${cell(index, "client", row.client || "", editable)}</td>
-          <td>${cell(index, "phone", row.phone || "", editable)}</td>
+          <td>${cell(index, "client", row.client || "", editable, row)}</td>
+          <td>${cell(index, "phone", row.phone || "", editable, row)}</td>
           <td><div class="row-actions"><button class="tiny-button" data-upload-one="${index}">Enviar</button><button class="tiny-button" data-remove-one="${index}">×</button></div></td>
         </tr>`;
       }).join("");
     }
+  } else if ($("#batchRows")) {
+    $("#batchRows").innerHTML = `<tr><td colspan="11" class="batch-empty-cell">Nenhuma imagem carregada. Clique em Validar lote para ler a pasta configurada.</td></tr>`;
   }
   bindBatchInputs();
   renderSummary();
@@ -1200,7 +1656,10 @@ function bindBatchInputs() {
       renderRows();
       return;
     }
+    if (input.dataset.field === "id") updateReservationStatus(row);
     row.valid = validateRowLocal(row);
+    input.classList.toggle("is-invalid", fieldHasError(row, input.dataset.field));
+    input.title = fieldHasError(row, input.dataset.field) ? (row.errors || []).join("; ") : "";
     renderSummary();
   }));
   $$("[data-select-row]").forEach((input) => input.addEventListener("change", () => {
@@ -1215,21 +1674,39 @@ function bindBatchInputs() {
   $$("[data-upload-one]").forEach((button) => button.addEventListener("click", () => uploadOne(Number(button.dataset.uploadOne))));
 }
 
-function fillFromReservation() {
+async function fillFromReservation() {
+  if (!state.reservations.length) {
+    await refreshReservations().catch(() => null);
+  }
   const reservation = state.reservations[0];
   if (!reservation) return toast("Não há reserva ativa.");
-  state.rows = state.rows.map((row, index) => {
-     const r = { ...row, id: reservation.ids[index] || row.id };
+  const reserved = new Set((reservation.ids || []).map((id) => String(id)));
+  const typed = new Set(state.rows.map((row) => String(row.id || "").trim()).filter(Boolean));
+  let matching = 0;
+  let outside = 0;
+  state.rows = state.rows.map((row) => {
+     const id = String(row.id || "").trim();
+     const r = { ...row, reservationStatus: "" };
+     updateReservationStatus(r, reservation);
+     if (id && reserved.has(id)) {
+       matching += 1;
+     } else if (id) {
+       outside += 1;
+     }
      r.valid = validateRowLocal(r);
      return r;
   });
+  const missing = [...reserved].filter((id) => !typed.has(id)).length;
   setMode("manual");
-  toast("IDs da primeira reserva aplicados.");
+  const message = `Reserva ${reservation.label || ""}: ${matching} ID(s) batem, ${outside} fora da reserva, ${missing} reservado(s) sem linha.`;
+  setBatchActionStatus(message);
+  toast(message);
 }
 
-function cell(index, field, value, editable) {
+function cell(index, field, value, editable, row = {}) {
+  const invalid = fieldHasError(row, field);
   if (!editable) return escapeHtml(value || "-");
-  return `<input data-row="${index}" data-field="${field}" value="${escapeHtml(value)}" />`;
+  return `<input class="batch-field ${invalid ? "is-invalid" : ""}" data-row="${index}" data-field="${field}" value="${escapeHtml(value)}" title="${invalid ? escapeHtml(row.errors?.join("; ") || "Campo inválido") : ""}" />`;
 }
 
 function productCell(index, value, editable, products) {
@@ -1251,7 +1728,7 @@ function status(row) {
 }
 
 async function validateRows() {
-  setBusy("Validando lote...");
+  setBusy("Lendo e validando lote...");
   const button = $("#validateRowsButton");
   const original = button?.textContent || "Validar lote";
   if (button) {
@@ -1259,13 +1736,42 @@ async function validateRows() {
     button.textContent = "Validando...";
   }
   try {
-  state.rows = (await window.artBank.validateBatch(state.rows)).map((row) => {
-    let combined = { ...row, ...(row.parsed || {}) };
-    combined.valid = validateRowLocal(combined);
-    return combined;
-  });
-  renderRows();
-  toast("Lote validado. (Checagem Cloud + Cache)");
+    if (state.mode === "standard" || !state.rows.length) {
+      const folders = selectedBatchFolders();
+      if (!folders.length) {
+        state.rows = [];
+        renderRows();
+        const message = "Escolha uma pasta antes de validar o lote.";
+        setBatchActionStatus(message);
+        toast(message);
+        return;
+      }
+      state.files = await window.artBank.scanImages(folders);
+      if (!state.files.length) {
+        state.rows = [];
+        renderRows();
+        const message = "Nenhuma imagem encontrada na pasta configurada.";
+        setBatchActionStatus(message);
+        toast(message);
+        return;
+      }
+      await parseStandardRows();
+    }
+    state.rows = (await window.artBank.validateBatch(state.rows)).map((row) => {
+      let combined = { ...row, ...(row.parsed || {}) };
+      combined.valid = validateRowLocal(combined);
+      return combined;
+    });
+    renderRows();
+    const valid = state.rows.filter((row) => row.valid).length;
+    const invalid = state.rows.length - valid;
+    const message = `${valid} arte(s) apta(s) para subir, ${invalid} com pendência.`;
+    setBatchActionStatus(message);
+    toast(message);
+  } catch (error) {
+    const message = friendlyError(error.message);
+    setBatchActionStatus(message);
+    toast(message);
   } finally {
     if (button) {
       button.disabled = false;
@@ -1291,18 +1797,10 @@ async function choosePanel50Input() {
   const folder = await window.artBank.chooseImageFolder();
   if (folder && $("#panel50InputFolder")) {
     $("#panel50InputFolder").value = folder;
+    clearBatch();
+    setBatchActionStatus("Pasta selecionada. Clique em Validar lote para carregar as artes.");
     updatePanel50ThemePreview();
   }
-}
-
-async function choosePanel50Organized() {
-  const folder = await window.artBank.chooseImageFolder();
-  if (folder && $("#panel50OrganizedRoot")) $("#panel50OrganizedRoot").value = folder;
-}
-
-async function choosePanel50DriveRoot() {
-  const folder = await window.artBank.chooseImageFolder();
-  if (folder && $("#panel50DriveRoot")) $("#panel50DriveRoot").value = folder;
 }
 
 async function choosePanel50Mockup() {
@@ -1311,15 +1809,12 @@ async function choosePanel50Mockup() {
 }
 
 function fillPanel50AutomationForm() {
-  const sourceRoot = state.config?.panel50SourceRoot || "";
   if ($("#panel50InputFolder") && !$("#panel50InputFolder").value) {
-    $("#panel50InputFolder").value = state.config?.panel50LastInputFolder || sourceRoot;
+    $("#panel50InputFolder").value = usableBatchPath(state.config?.panel50LastInputFolder);
   }
   if ($("#panel50Theme") && !$("#panel50Theme").value) {
     $("#panel50Theme").value = detectPanel50Theme($("#panel50InputFolder")?.value);
   }
-  if ($("#panel50OrganizedRoot")) $("#panel50OrganizedRoot").value = state.config?.panel50OrganizedRoot || "X:\\1 - TEMAS ORGANIZADOS";
-  if ($("#panel50DriveRoot")) $("#panel50DriveRoot").value = state.config?.panel50DriveLocalRoot || "X:\\2 - DRIVE";
   updatePanel50ThemePreview();
 }
 
@@ -1334,7 +1829,7 @@ function updatePanel50ThemePreview() {
   const autoTheme = detectPanel50Theme($("#panel50InputFolder")?.value);
   if ($("#panel50Theme") && !state.panel50ThemeTouched) $("#panel50Theme").value = autoTheme;
   const theme = $("#panel50Theme")?.value.trim().toUpperCase() || autoTheme;
-  if ($("#panel50DetectedTheme")) $("#panel50DetectedTheme").textContent = theme ? `Tema: ${theme}` : "Tema: detectado pela pasta SKU";
+  if ($("#panel50DetectedTheme")) $("#panel50DetectedTheme").textContent = theme ? `Tema: ${theme}` : "Tema: escolha uma pasta";
 }
 
 async function runPanel50Automation() {
@@ -1344,32 +1839,46 @@ async function runPanel50Automation() {
     inputFolder: $("#panel50InputFolder")?.value.trim(),
     organizedRoot: $("#panel50OrganizedRoot")?.value.trim(),
     driveLocalRoot: $("#panel50DriveRoot")?.value.trim(),
+    mockupPath: $("#panel50MockupPath")?.value.trim(),
     theme: $("#panel50Theme")?.value.trim(),
     uploadAfter: $("#panel50UploadAfter")?.checked !== false,
   };
   try {
+    startActionProgress("Renomeando e enviando", "Preparando automação.", 8);
     if (button) {
       button.disabled = true;
       button.textContent = "Executando...";
     }
-    state.config = await window.artBank.saveConfig({
+    const nextConfig = {
       ...state.config,
       panel50LastInputFolder: payload.inputFolder,
-      panel50OrganizedRoot: payload.organizedRoot,
-      panel50DriveLocalRoot: payload.driveLocalRoot,
-    });
+    };
+    if (payload.organizedRoot) nextConfig.panel50OrganizedRoot = payload.organizedRoot;
+    if (payload.driveLocalRoot) nextConfig.panel50DriveLocalRoot = payload.driveLocalRoot;
+    if (payload.mockupPath) nextConfig.panel50MockupPath = payload.mockupPath;
+    state.config = await window.artBank.saveConfig(nextConfig);
     renderPanel50Progress({ phase: "Preparando", current: 0, total: 1, detail: "Conferindo IDs livres e criando fila." });
     const result = await window.artBank.runPanel50Batch(payload);
     const ok = result.counts?.upload_ok || 0;
     const mockups = result.counts?.mockup_ok || 0;
     const errors = result.counts?.error || 0;
     renderPanel50Progress({ phase: "Concluido", current: ok || mockups, total: result.items?.length || 0, detail: `${ok} enviados, ${mockups} prontos, ${errors} erro(s).` });
+    finishActionProgress("Automação finalizada.");
     toast(`Automação finalizada: ${ok} enviados, ${mockups} prontos, ${errors} erros.`);
     await refreshArtworks({ force: true });
     await refreshDriveFolders(true);
   } catch (error) {
-    renderPanel50Progress({ phase: "Erro", current: 0, total: 1, detail: friendlyError(error.message), error: true });
-    toast(error.message);
+    const message = friendlyError(error.message);
+    const noImages = message.toLowerCase().includes("nenhuma imagem");
+    renderPanel50Progress({
+      phase: noImages ? "Sem imagens" : "Erro",
+      current: 0,
+      total: noImages ? 0 : 1,
+      detail: message,
+      error: !noImages,
+    });
+    finishActionProgress(noImages ? "Sem imagens para processar." : "Falha na automação.");
+    toast(message);
   } finally {
     if (button) {
       button.disabled = false;
@@ -1385,11 +1894,13 @@ async function doUpload(rows) {
       return;
     }
     state.uploadStartedAt = Date.now();
+    startActionProgress("Enviando artes", `${rows.length} arte(s) selecionada(s).`, 8);
     renderUploadProgress({ phase: "Iniciando envio", current: 0, total: rows.length, detail: "Preparando arquivos.", etaMs: 0 });
     if($("#submitBatchButton")) $("#submitBatchButton").disabled = true;
     if($("#uploadHint")) $("#uploadHint").textContent = "Enviando com lock global...";
     const result = await window.artBank.uploadBatch(rows);
     if($("#uploadHint")) $("#uploadHint").textContent = `${result.successes.length} enviadas, ${result.failures.length} falhas.`;
+    finishActionProgress("Envio finalizado.");
     
     // Atualiza cache rapidamente apos envio
     state.cache = await window.artBank.runSync().catch(() => state.cache);
@@ -1400,6 +1911,7 @@ async function doUpload(rows) {
   } catch (error) {
     renderUploadProgress({ phase: "Falha no envio", current: 0, total: rows.length, detail: friendlyError(error.message), etaMs: 0, error: true });
     if($("#uploadHint")) $("#uploadHint").textContent = friendlyError(error.message);
+    finishActionProgress("Falha no envio.");
     toast(error.message);
   } finally {
     if($("#submitBatchButton")) $("#submitBatchButton").disabled = false;
@@ -1417,6 +1929,7 @@ function renderUploadProgress(progress = {}) {
     $("#uploadEta").textContent = progress.etaMs ? `ETA ${formatDuration(progress.etaMs)}` : `${percent}%`;
   }
   $("#uploadTracker")?.classList.toggle("error", Boolean(progress.error));
+  updateActionProgress(percent, progress.detail || progress.phase || "Enviando.");
 }
 
 function renderPanel50Progress(progress = {}) {
@@ -1429,6 +1942,8 @@ function renderPanel50Progress(progress = {}) {
   $("#panel50Count").textContent = total ? `${current}/${total}` : "-";
   $("#panel50ProgressBar").style.width = `${percent}%`;
   $("#panel50ProgressBar").parentElement?.parentElement?.classList.toggle("error", Boolean(progress.error));
+  $("#panel50ProgressBar").parentElement?.parentElement?.classList.toggle("empty", total === 0 && !progress.error);
+  updateActionProgress(percent, progress.detail || progress.phase || "Processando.");
 }
 
 async function refreshFinanceClients() {
@@ -1518,11 +2033,36 @@ async function refreshFinancePreview() {
     return;
   }
   try {
+    renderFinancePreviewSkeleton();
     state.financePreview = await window.artBank.previewFinanceOrder(state.financeItems);
     renderFinancePreview();
     updateFinanceSummary(state.financePreview);
   } catch (error) {
     toast(error.message);
+  }
+}
+
+function renderFinancePreviewSkeleton() {
+  const grid = $("#financeArtGrid");
+  const checklist = $("#financeChecklist");
+  const count = Math.min(4, Math.max(1, state.financeItems.length));
+  if (grid) {
+    grid.innerHTML = Array.from({ length: count }).map(() => `
+      <article class="order-art-card skeleton-card" aria-hidden="true">
+        <div class="skeleton skeleton-thumb"></div>
+        <div class="skeleton skeleton-line wide"></div>
+        <div class="skeleton skeleton-line short"></div>
+      </article>
+    `).join("");
+  }
+  if (checklist) {
+    checklist.classList.remove("hidden");
+    checklist.innerHTML = Array.from({ length: count }).map(() => `
+      <div class="order-check-row skeleton-card" aria-hidden="true">
+        <div class="skeleton skeleton-line wide"></div>
+        <div class="skeleton skeleton-line short"></div>
+      </div>
+    `).join("");
   }
 }
 
@@ -1624,28 +2164,7 @@ function clearBatch() {
   state.rows = [];
   state.files = [];
   renderRows();
-}
-
-function addBlankRow() {
-  if (!state.config?.allowManualBatch) {
-    toast("Cadastro manual desativado nas configurações.");
-    return;
-  }
-  state.rows.push({
-    selected: true,
-    fileName: "Cadastro manual",
-    path: "",
-    previewUrl: "",
-    id: "",
-    theme: "",
-    product: "",
-    size: "",
-    client: "",
-    phone: "",
-    valid: false,
-    errors: ["Preencha os campos obrigatórios."],
-  });
-  setMode("manual");
+  setBatchActionStatus("Escolha uma pasta e valide para carregar as artes.");
 }
 
 function removeSelectedRows() {
@@ -1661,17 +2180,62 @@ function renderSummary() {
   if($("#summaryInvalid")) $("#summaryInvalid").textContent = total - valid;
 }
 
+function setBatchActionStatus(message) {
+  if ($("#batchActionStatus")) $("#batchActionStatus").textContent = message;
+}
+
+function selectedBatchFolders() {
+  const folder = usableBatchPath($("#panel50InputFolder")?.value);
+  return folder ? [folder] : [];
+}
+
+function usableBatchPath(value) {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  if (/SKU\s*-\s*ATESTE$/i.test(text)) return "";
+  return text;
+}
+
+function updateReservationStatus(row, reservation = state.reservations[0]) {
+  if (!reservation) {
+    row.reservationStatus = "";
+    return;
+  }
+  const id = String(row.id || "").trim();
+  if (!id) {
+    row.reservationStatus = "";
+    return;
+  }
+  const reserved = new Set((reservation.ids || []).map((item) => String(item)));
+  row.reservationStatus = reserved.has(id) ? "match" : "outside";
+}
+
+function fieldHasError(row, field) {
+  const errors = (row.errors || []).join(" ").toLowerCase();
+  if (field === "id") return /id|reserva|cache|repetido/.test(errors);
+  if (field === "theme") return errors.includes("tema");
+  if (field === "product") return errors.includes("produto");
+  if (field === "size") return errors.includes("dimens");
+  return false;
+}
+
 function openLocalPreview(row) {
   if(!$("#previewModal")) return;
+  if ($("#previewTitle")) $("#previewTitle").textContent = row.fileName || "Prévia local";
+  if ($("#previewMeta")) $("#previewMeta").textContent = row.path || "Arquivo local";
   $("#previewModal").classList.remove("hidden");
+  hidePreviewFallback();
   $("#drivePreviewFrame").classList.add("hidden");
   $("#localPreviewImage").classList.remove("hidden");
   $("#localPreviewImage").src = row.previewUrl || row.originalUrl || "";
 }
 
-function openDrivePreview(url) {
+function openDrivePreview(url, art = null) {
   if (!url || !$("#previewModal")) return toast("Esta arte não tem URL.");
+  if ($("#previewTitle")) $("#previewTitle").textContent = art ? `ID ${art.id} · ${art.theme || "Sem tema"}` : "Prévia da arte";
+  if ($("#previewMeta")) $("#previewMeta").textContent = art ? `${art.product || "Sem produto"} · ${art.size || "Sem tamanho"}` : "Imagem cadastrada";
   $("#previewModal").classList.remove("hidden");
+  hidePreviewFallback();
   $("#drivePreviewFrame").src = "about:blank";
   $("#drivePreviewFrame").classList.add("hidden");
   $("#localPreviewImage").classList.remove("hidden");
@@ -1683,6 +2247,17 @@ function closePreview() {
   $("#previewModal").classList.add("hidden");
   $("#drivePreviewFrame").src = "about:blank";
   $("#localPreviewImage").src = "";
+  hidePreviewFallback();
+}
+
+function showPreviewFallback() {
+  $("#localPreviewImage")?.classList.add("hidden");
+  $("#drivePreviewFrame")?.classList.add("hidden");
+  $("#previewFallback")?.classList.remove("hidden");
+}
+
+function hidePreviewFallback() {
+  $("#previewFallback")?.classList.add("hidden");
 }
 
 function lines(value) {
@@ -1711,10 +2286,19 @@ function applyProductSizeRule(row) {
   row.valid = validateRowLocal(row);
 }
 
-function artThumb(url) {
-  const preview = imagePreviewUrl(url);
-  if (!preview) return `<span style="color:var(--text-3);font-size:11px">-</span>`;
-  return `<button class="thumb-button" data-preview-drive="${escapeHtml(url)}"><img class="art-thumb" src="${escapeHtml(preview)}" alt="Prévia" /></button>`;
+function artThumb(artOrUrl) {
+  const art = typeof artOrUrl === "object" && artOrUrl !== null ? artOrUrl : { url: artOrUrl, id: "" };
+  const preview = imagePreviewUrl(art.url);
+  const empty = `
+    <button class="thumb-button thumb-empty" type="button" title="Sem prévia">
+      <svg class="thumb-empty-icon" viewBox="0 0 24 24"><path d="M21 19V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2zM8.5 11.5l2.5 3.01L14.5 10l4.5 6H5l3.5-4.5z"/></svg>
+    </button>`;
+  if (!preview) return empty;
+  return `
+    <button class="thumb-button thumb-loading" data-preview-drive="${escapeHtml(art.url)}" data-preview-id="${escapeHtml(art.id || "")}" title="Abrir prévia">
+      <img class="art-thumb" src="${escapeHtml(preview)}" alt="Prévia da arte ${escapeHtml(art.id || "")}" onload="this.closest('button').classList.remove('thumb-loading')" onerror="this.closest('button').classList.remove('thumb-loading');this.closest('button').classList.add('thumb-empty');this.remove();" />
+      <svg class="thumb-empty-icon" viewBox="0 0 24 24"><path d="M21 19V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2zM8.5 11.5l2.5 3.01L14.5 10l4.5 6H5l3.5-4.5z"/></svg>
+    </button>`;
 }
 
 function imagePreviewUrl(url) {
@@ -1786,7 +2370,12 @@ function resolveConfirm(value) {
 }
 
 function friendlyError(message) {
-  const text = String(message || "");
+  let text = String(message || "");
+  text = text.replace(/^Error invoking remote method '[^']+':\s*/i, "");
+  text = text.replace(/^Error:\s*/i, "");
+  if (text.includes("Nenhuma imagem TIFF/JPG/PNG encontrada")) {
+    return "Nenhuma imagem encontrada na pasta escolhida.";
+  }
   if (text.includes("missing required authentication credential") || text.includes("Expected OAuth")) {
     return "Google não conectado. Use Conectar Google ou coloque token.json válido na pasta fixa.";
   }

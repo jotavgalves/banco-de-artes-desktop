@@ -4,8 +4,9 @@ const crypto = require("node:crypto");
 const os = require("node:os");
 const { app } = require("electron");
 const syncService = require("./syncService");
-const googleService = require("./googleService");
-const { BASE_SHEETS } = require("../shared/defaults");
+const supabaseAuthService = require("./supabaseAuthService");
+const supabaseCoordinationService = require("./supabaseCoordinationService");
+const supabasePresenceService = require("./supabasePresenceService");
 
 const PASSWORD_ITERATIONS = 180000;
 const PASSWORD_KEYLEN = 32;
@@ -14,10 +15,6 @@ const UNIVERSAL_ADMIN_RECOVERY = "121225";
 
 let activeSessionId = null;
 let activeActor = null;
-
-function appRoot() {
-  return typeof app?.getAppPath === "function" ? app.getAppPath() : process.cwd();
-}
 
 function fixedDataDir(config) {
   const preferred = config.fixedDataFolder || "C:\\BancoDeArtes";
@@ -51,26 +48,22 @@ function writeJson(config, name, data) {
 }
 
 function sessions(config) {
-  const cache = syncService.getCache(config);
-  if (cache.sessions && cache.sessions.length > 0) return cache.sessions;
   return readJson(config, "sessions.json", []);
 }
 
 function saveSessions(config, rows) {
   writeJson(config, "sessions.json", rows);
-  googleService.syncGlobalState(config, appRoot(), "SESSIONS", JSON.stringify(rows)).catch(console.error);
+  syncService.getCache(config).sessions = rows;
   return rows;
 }
 
 function reservations(config) {
-  const cache = syncService.getCache(config);
-  if (cache.reservations && cache.reservations.length > 0) return cache.reservations;
   return readJson(config, "reservations.json", []);
 }
 
 function saveReservations(config, rows) {
   writeJson(config, "reservations.json", rows);
-  googleService.syncGlobalState(config, appRoot(), "RESERVATIONS", JSON.stringify(rows)).catch(console.error);
+  syncService.getCache(config).reservations = rows;
   return rows;
 }
 
@@ -81,37 +74,11 @@ function users(config) {
   return readJson(config, "users_backup.json", []);
 }
 
-async function writeUsersToSheet(config, rows) {
-  // Sempre salva um backup local
+async function writeUsersLocalCache(config, rows) {
   writeJson(config, "users_backup.json", rows);
   const cache = syncService.getCache(config);
   cache.users = rows;
   fs.writeFileSync(path.join(fixedDataDir(config), "bancoCache.json"), JSON.stringify(cache, null, 2), "utf8");
-
-  if (!config.baseSpreadsheetId) {
-    // Se ainda não configurou o Google, salva localmente para permitir o primeiro login
-    return;
-  }
-  const { sheets } = await googleService.services(config, appRoot());
-  
-  // Limpa a aba e reescreve para não deixar usuários antigos sobrando em linhas abaixo.
-  await sheets.spreadsheets.values.clear({
-    spreadsheetId: config.baseSpreadsheetId,
-    range: `'${BASE_SHEETS.users.name}'!A:E`,
-  });
-  await sheets.spreadsheets.values.update({
-    spreadsheetId: config.baseSpreadsheetId,
-    range: `'${BASE_SHEETS.users.name}'!A1:E${rows.length + 1}`,
-    valueInputOption: "RAW",
-    requestBody: {
-      values: [
-        BASE_SHEETS.users.header,
-        ...rows.map(u => [u.login, u.name, u.role, u.active ? "TRUE" : "FALSE", u.password])
-      ]
-    },
-  });
-  
-  // Força uma sincronização local imediata
   await syncService.runSync();
 }
 
@@ -132,46 +99,83 @@ async function createAdmin(config, payload) {
     role: "admin",
     active: true,
   };
-  await writeUsersToSheet(config, [...current, user]);
+  await writeUsersLocalCache(config, [...current, user]);
   return publicUser(user);
 }
 
 async function login(config, loginValue, password) {
-  const loginStr = cleanLogin(loginValue);
-  const rows = users(config);
-  const user = rows.find((item) => item.login === loginStr);
-  
-  if (!user || !user.active) throw new Error("Usuário não encontrado ou inativo.");
-  const recovery = user.role === "admin" && String(password) === UNIVERSAL_ADMIN_RECOVERY;
-  if (!recovery && !verifyPassword(password, user.password)) throw new Error("Senha incorreta.");
-
-  if (recovery) {
-    const target = rows.find((item) => item.login === user.login);
-    target.password = hashPassword(UNIVERSAL_ADMIN_RECOVERY);
-    await writeUsersToSheet(config, rows);
+  let supabaseLoginError = null;
+  if (supabaseAuthService.isAuthEnabled(config)) {
+    try {
+      const result = await supabaseAuthService.signIn(config, loginValue, password);
+      activeSessionId = result.session.id;
+      activeActor = {
+        login: result.user.login,
+        name: result.user.name,
+        role: result.user.role,
+        provider: "supabase",
+        supabaseProfileId: result.user.supabaseProfileId,
+        supabaseAuthUserId: result.user.supabaseAuthUserId,
+      };
+      saveSessions(config, [
+        ...sessions(config).filter((item) => !(item.login === result.session.login && item.machine === result.session.machine)),
+        result.session,
+      ]);
+      return { ...result, dataFolder: fixedDataDir(config) };
+    } catch (error) {
+      if (supabaseAuthService.authMode(config) === "supabase") throw error;
+      supabaseLoginError = error;
+      console.warn(`Supabase Auth indisponível, usando login local: ${error.message}`);
+    }
   }
 
-  const session = {
-    id: crypto.randomUUID(),
-    login: user.login,
-    name: user.name,
-    role: user.role,
-    machine: os.hostname(),
-    startedAt: new Date().toISOString(),
-    lastSeenAt: new Date().toISOString(),
-  };
-  activeSessionId = session.id;
-  activeActor = { login: user.login, name: user.name, role: user.role };
-  
-  saveSessions(config, [
-    ...sessions(config).filter((item) => !(item.login === user.login && item.machine === session.machine)),
-    session,
-  ]);
-  
-  return { session, user: publicUser(user), dataFolder: fixedDataDir(config) };
+  try {
+    const loginStr = cleanLogin(loginValue);
+    const rows = users(config);
+    const user = rows.find((item) => item.login === loginStr);
+
+    if (!user || !user.active) throw new Error("Usuário não encontrado ou inativo.");
+    const recovery = user.role === "admin" && String(password) === UNIVERSAL_ADMIN_RECOVERY;
+    if (!recovery && !verifyPassword(password, user.password)) throw new Error("Senha incorreta.");
+
+    if (recovery) {
+      const target = rows.find((item) => item.login === user.login);
+      target.password = hashPassword(UNIVERSAL_ADMIN_RECOVERY);
+      await writeUsersLocalCache(config, rows);
+    }
+
+    const session = {
+      id: crypto.randomUUID(),
+      provider: "local",
+      login: user.login,
+      name: user.name,
+      role: user.role,
+      machine: os.hostname(),
+      startedAt: new Date().toISOString(),
+      lastSeenAt: new Date().toISOString(),
+    };
+    activeSessionId = session.id;
+    activeActor = { login: user.login, name: user.name, role: user.role };
+
+    saveSessions(config, [
+      ...sessions(config).filter((item) => !(item.login === user.login && item.machine === session.machine)),
+      session,
+    ]);
+
+    return { provider: "local", session, user: publicUser(user), dataFolder: fixedDataDir(config) };
+  } catch (localError) {
+    if (supabaseLoginError) {
+      throw new Error(`Supabase: ${supabaseLoginError.message} Login local: ${localError.message}`);
+    }
+    throw localError;
+  }
 }
 
-function logout(config) {
+async function logout(config) {
+  await supabasePresenceService.clear(config).catch((error) => {
+    console.warn(`Presença Supabase não foi limpa: ${error.message}`);
+  });
+  supabaseAuthService.logout();
   if (!activeSessionId) return true;
   saveSessions(config, sessions(config).filter((item) => item.id !== activeSessionId));
   activeSessionId = null;
@@ -179,19 +183,33 @@ function logout(config) {
   return true;
 }
 
-function heartbeat(config) {
+async function heartbeat(config, currentView = "") {
   if (!activeSessionId) return null;
   const rows = sessions(config);
   const index = rows.findIndex((item) => item.id === activeSessionId);
   if (index === -1) return null;
   rows[index].lastSeenAt = new Date().toISOString();
   saveSessions(config, rows);
-  
-  // Opcional: Atualizar a aba ONLINE na Planilha Central de forma assíncrona
+
+  if (supabasePresenceService.isAvailable(config)) {
+    return supabasePresenceService.heartbeat(config, currentView).catch((error) => {
+      if (shouldThrowSupabaseUserError(config)) throw error;
+      console.warn(`Heartbeat Supabase falhou, usando local: ${error.message}`);
+      return rows[index];
+    });
+  }
   return rows[index];
 }
 
-function onlineUsers(config) {
+async function onlineUsers(config) {
+  if (supabasePresenceService.isAvailable(config)) {
+    try {
+      return await supabasePresenceService.listOnline(config);
+    } catch (error) {
+      if (shouldThrowSupabaseUserError(config)) throw error;
+      console.warn(`Presença Supabase falhou, usando local: ${error.message}`);
+    }
+  }
   const timeoutMs = (Number(config.sessionTimeoutMinutes) || 10) * 60 * 1000;
   const now = Date.now();
   const rows = sessions(config).filter((item) => now - Date.parse(item.lastSeenAt || 0) <= timeoutMs);
@@ -206,12 +224,41 @@ function onlineUsers(config) {
   return deduped;
 }
 
-function listUsers(config) {
+async function listUsers(config) {
+  if (supabaseAuthService.current()?.accessToken) {
+    try {
+      return await supabaseAuthService.listProfiles(config);
+    } catch (error) {
+      if (shouldThrowSupabaseUserError(config)) throw error;
+      console.warn(`Não consegui listar usuários no Supabase, usando locais: ${error.message}`);
+    }
+  }
   return users(config).map(publicUser);
 }
 
 async function createUser(config, payload, actor) {
   requireAdmin(actor);
+  if (shouldUseSupabaseUsers(config)) {
+    try {
+      await supabaseAuthService.adminUserAction(config, {
+        action: "create",
+        login: payload.login,
+        name: payload.name,
+        role: payload.role,
+        password: payload.password,
+      });
+      return {
+        id: cleanLogin(payload.login),
+        login: cleanLogin(payload.login),
+        name: payload.name?.trim() || cleanLogin(payload.login),
+        role: payload.role === "admin" ? "admin" : "operator",
+        active: true,
+      };
+    } catch (error) {
+      if (shouldThrowSupabaseUserError(config)) throw error;
+      console.warn(`Criação Supabase falhou, usando local: ${error.message}`);
+    }
+  }
   const rows = users(config);
   const loginValue = cleanLogin(payload.login);
   if (rows.some((item) => item.login === loginValue)) throw new Error("Login já cadastrado.");
@@ -224,22 +271,61 @@ async function createUser(config, payload, actor) {
     password: hashPassword(payload.password),
   };
   rows.push(user);
-  await writeUsersToSheet(config, rows);
+  await writeUsersLocalCache(config, rows);
   return publicUser(user);
 }
 
 async function setUserActive(config, loginValue, active, actor) {
   requireAdmin(actor);
+  if (shouldUseSupabaseUsers(config)) {
+    try {
+      await supabaseAuthService.adminUserAction(config, {
+        action: "set-active",
+        userId: loginValue,
+        active: Boolean(active),
+      });
+      return {
+        id: cleanLogin(loginValue),
+        login: cleanLogin(loginValue),
+        active: Boolean(active),
+      };
+    } catch (error) {
+      if (shouldThrowSupabaseUserError(config)) throw error;
+      console.warn(`Ativação Supabase falhou, usando local: ${error.message}`);
+    }
+  }
   const rows = users(config);
   const user = rows.find((item) => item.login === loginValue);
   if (!user) throw new Error("Usuário não encontrado.");
   user.active = Boolean(active);
-  await writeUsersToSheet(config, rows);
+  await writeUsersLocalCache(config, rows);
   return publicUser(user);
 }
 
 async function updateUser(config, payload, actor) {
   requireAdmin(actor);
+  if (shouldUseSupabaseUsers(config)) {
+    try {
+      await supabaseAuthService.adminUserAction(config, {
+        action: "update",
+        userId: payload.userId,
+        login: payload.login,
+        name: payload.name,
+        role: payload.role,
+        active: true,
+      });
+      return {
+        id: cleanLogin(payload.login || payload.userId),
+        login: cleanLogin(payload.login || payload.userId),
+        name: payload.name?.trim() || cleanLogin(payload.login || payload.userId),
+        role: payload.role === "admin" ? "admin" : "operator",
+        active: true,
+      };
+    } catch (error) {
+      if (shouldThrowSupabaseUserError(config)) throw error;
+      console.warn(`Atualização Supabase falhou, usando local: ${error.message}`);
+    }
+  }
   const rows = users(config);
   const user = rows.find((item) => item.login === payload.userId); // payload.userId envia o login no frontend antigo, vamos manter compativel
   if (!user) throw new Error("Usuário não encontrado.");
@@ -251,36 +337,72 @@ async function updateUser(config, payload, actor) {
     if (rows.some((item) => item.login !== user.login && item.login === newLogin)) throw new Error("Login já cadastrado.");
     user.login = newLogin;
   }
-  await writeUsersToSheet(config, rows);
+  await writeUsersLocalCache(config, rows);
   return publicUser(user);
 }
 
 async function resetPassword(config, payload, actor) {
   requireAdmin(actor);
+  if (shouldUseSupabaseUsers(config)) {
+    try {
+      await supabaseAuthService.adminUserAction(config, {
+        action: "reset-password",
+        userId: payload.userId,
+        password: payload.password,
+      });
+      return {
+        id: cleanLogin(payload.userId),
+        login: cleanLogin(payload.userId),
+      };
+    } catch (error) {
+      if (shouldThrowSupabaseUserError(config)) throw error;
+      console.warn(`Reset Supabase falhou, usando local: ${error.message}`);
+    }
+  }
   const rows = users(config);
   const user = rows.find((item) => item.login === payload.userId);
   if (!user) throw new Error("Usuário não encontrado.");
   user.password = hashPassword(payload.password || UNIVERSAL_ADMIN_RECOVERY);
-  await writeUsersToSheet(config, rows);
+  await writeUsersLocalCache(config, rows);
   return publicUser(user);
 }
 
 async function deleteUser(config, loginValue, actor) {
   requireAdmin(actor);
+  if (shouldUseSupabaseUsers(config)) {
+    try {
+      await supabaseAuthService.adminUserAction(config, {
+        action: "delete",
+        userId: loginValue,
+      });
+      return true;
+    } catch (error) {
+      if (shouldThrowSupabaseUserError(config)) throw error;
+      console.warn(`Exclusão Supabase falhou, usando local: ${error.message}`);
+    }
+  }
   const rows = users(config);
   const user = rows.find((item) => item.login === loginValue);
   if (!user) throw new Error("Usuário não encontrado.");
   if (user.role === "admin" && rows.filter((item) => item.role === "admin").length <= 1) {
     throw new Error("Não apague o único admin.");
   }
-  await writeUsersToSheet(config, rows.filter((item) => item.login !== loginValue));
+  await writeUsersLocalCache(config, rows.filter((item) => item.login !== loginValue));
   saveSessions(config, sessions(config).filter((item) => item.login !== loginValue));
   return true;
 }
 
-// Reservas ainda podem ser mantidas locais / Planilha, mas mantendo a interface
+// Reservas ainda podem ser mantidas locais, mas mantendo a interface.
 async function reserveIds(config, payload, actor) {
   if (!actor) throw new Error("Login necessário.");
+  if (supabaseCoordinationService.isAvailable(config)) {
+    try {
+      return await supabaseCoordinationService.reserveIds(config, payload, actor);
+    } catch (error) {
+      if (shouldThrowSupabaseUserError(config)) throw error;
+      console.warn(`Reserva Supabase falhou, usando local: ${error.message}`);
+    }
+  }
   let start = Number(payload.start);
   const count = Number(payload.count);
   if (!Number.isInteger(count) || count < 1 || count > 500) throw new Error("Quantidade inválida.");
@@ -294,7 +416,7 @@ async function reserveIds(config, payload, actor) {
   if (conflict) throw new Error(`ID ${conflict} já está reservado.`);
 
   const usedConflict = ids.find((id) => used.has(id));
-  if (usedConflict) throw new Error(`ID ${usedConflict} ja existe na planilha.`);
+  if (usedConflict) throw new Error(`ID ${usedConflict} já existe na base oficial.`);
 
   const expiresAt = new Date(Date.now() + (Number(config.reservationTtlMinutes) || 30) * 60 * 1000).toISOString();
   const reservation = {
@@ -311,7 +433,15 @@ async function reserveIds(config, payload, actor) {
   return reservation;
 }
 
-function listReservations(config) {
+async function listReservations(config) {
+  if (supabaseCoordinationService.isAvailable(config)) {
+    try {
+      return await supabaseCoordinationService.listReservations(config);
+    } catch (error) {
+      if (supabaseAuthService.authMode(config) === "supabase") throw error;
+      console.warn(`Listagem de reservas Supabase falhou, usando local: ${error.message}`);
+    }
+  }
   return cleanupReservations(config);
 }
 
@@ -326,6 +456,17 @@ function nextAvailableReservationStart(config, count) {
 }
 
 function releaseReservation(config, reservationId, actor) {
+  if (supabaseCoordinationService.isAvailable(config)) {
+    return supabaseCoordinationService.releaseReservation(config, reservationId).catch((error) => {
+      if (supabaseAuthService.authMode(config) === "supabase") throw error;
+      console.warn(`Liberação de reserva Supabase falhou, usando local: ${error.message}`);
+      return releaseLocalReservation(config, reservationId, actor);
+    });
+  }
+  return releaseLocalReservation(config, reservationId, actor);
+}
+
+function releaseLocalReservation(config, reservationId, actor) {
   const active = reservations(config);
   const next = active.filter((item) => {
     const canRelease = item.id === reservationId && (actor?.role === "admin" || item.login === actor?.login);
@@ -333,6 +474,22 @@ function releaseReservation(config, reservationId, actor) {
   });
   saveReservations(config, next);
   return next;
+}
+
+async function lockStatus(config) {
+  if (supabaseCoordinationService.isAvailable(config)) {
+    try {
+      const status = await supabaseCoordinationService.lockStatus(config);
+      return {
+        ...status,
+        local: { status: "LIVRE", provider: "supabase" },
+      };
+    } catch (error) {
+      if (supabaseAuthService.authMode(config) === "supabase") throw error;
+      console.warn(`Lock Supabase falhou, usando status local: ${error.message}`);
+    }
+  }
+  return null;
 }
 
 function cleanupReservations(config) {
@@ -345,11 +502,15 @@ function cleanupReservations(config) {
 function currentActor(config) {
   if (activeActor) {
     const fresh = users(config).find((item) => item.login === activeActor.login);
-    if (fresh?.active) return { login: fresh.login, name: fresh.name, role: fresh.role };
+    if (fresh?.active) return { ...activeActor, login: fresh.login, name: fresh.name, role: fresh.role };
     return activeActor;
   }
   if (!activeSessionId) return null;
   return sessions(config).find((item) => item.id === activeSessionId) || null;
+}
+
+function currentActorUsesSupabase() {
+  return activeActor?.provider === "supabase" || Boolean(supabaseAuthService.current()?.accessToken);
 }
 
 function hashPassword(password) {
@@ -383,6 +544,14 @@ function requireAdmin(actor) {
   if (!actor || actor.role !== "admin") throw new Error("Ação restrita ao admin.");
 }
 
+function shouldUseSupabaseUsers(config) {
+  return Boolean(supabaseAuthService.current()?.accessToken && supabaseAuthService.authMode(config) !== "local");
+}
+
+function shouldThrowSupabaseUserError(config) {
+  return supabaseAuthService.authMode(config) === "supabase" || currentActorUsesSupabase();
+}
+
 module.exports = {
   bootstrapStatus,
   createAdmin,
@@ -400,5 +569,6 @@ module.exports = {
   listReservations,
   releaseReservation,
   currentActor,
+  lockStatus,
   fixedDataDir,
 };

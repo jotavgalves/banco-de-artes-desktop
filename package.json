@@ -8,7 +8,9 @@
     "check": "node scripts/check.js"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.107.0",
     "electron": "^31.7.7",
-    "googleapis": "^144.0.0"
+    "googleapis": "^144.0.0",
+    "ws": "^8.21.0"
   }
 }

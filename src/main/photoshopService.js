@@ -3,15 +3,20 @@ const path = require("node:path");
 const crypto = require("node:crypto");
 const { spawn } = require("node:child_process");
 const googleService = require("./googleService");
+const supabaseArtworkService = require("./supabaseArtworkService");
+const supabaseCoordinationService = require("./supabaseCoordinationService");
 
 const IMAGE_EXTENSIONS = new Set([".tif", ".tiff", ".jpg", ".jpeg", ".png"]);
 const JOB_FILE = "painel50-job.json";
 const JSX_FILE = "painel50-runner.jsx";
 const STATUS_FILE = "painel50-status.json";
 const DEFAULT_TIMEOUT_MS = 30 * 60 * 1000;
+const MAX_PS_RETRIES = 3;
+const RETRY_DELAY_MS = 5000;
+const MIN_MOCKUP_BYTES = 1024;
 const PRODUCT = "PAINEL REDONDO";
 const SIZE = "50X50";
-const DEFAULT_SOURCE_ROOT = "X:\\FESTAS E EVENTOS\\PAINEIS MARCKETPLACE\\SKUPR50 - PAINEIS REDONDOS 50 X 50\\SKUPR50 - IMPRESSÃO";
+const DEFAULT_SOURCE_ROOT = "";
 const DEFAULT_ORGANIZED_ROOT = "X:\\1 - TEMAS ORGANIZADOS";
 const DEFAULT_DRIVE_LOCAL_ROOT = "X:\\2 - DRIVE";
 
@@ -144,7 +149,9 @@ async function runPanel50Batch(config, appRoot, payload = {}, actor = null, onPr
   const stateFile = path.join(dir, JOB_FILE);
   const statusFile = path.join(dir, STATUS_FILE);
   const jsxFile = path.join(dir, JSX_FILE);
-  const inputFolder = path.resolve(payload.inputFolder || config.panel50LastInputFolder || path.join(config.panel50SourceRoot || DEFAULT_SOURCE_ROOT, "SKU - ATESTE"));
+  const inputFolderValue = payload.inputFolder || config.panel50LastInputFolder || config.panel50SourceRoot || DEFAULT_SOURCE_ROOT;
+  if (!inputFolderValue) throw new Error("Escolha uma pasta antes de executar a automação.");
+  const inputFolder = path.resolve(inputFolderValue);
   const theme = themeFromFolder(inputFolder, payload.theme);
   const themeFolderName = cleanFolderName(theme);
   const organizedRoot = path.resolve(payload.organizedRoot || config.panel50OrganizedRoot || DEFAULT_ORGANIZED_ROOT);
@@ -159,9 +166,12 @@ async function runPanel50Batch(config, appRoot, payload = {}, actor = null, onPr
   const key = jobKey({ inputFolder, organizedRoot, driveLocalRoot, mockupPath, theme });
   const previous = readJson(stateFile, null);
   const files = listInputImages(inputFolder);
+  if (!files.length) {
+    onProgress({ phase: "Sem imagens", current: 0, total: 0, detail: "Nenhuma imagem encontrada na pasta escolhida." });
+    throw new Error("Nenhuma imagem encontrada na pasta escolhida.");
+  }
 
   let job = previous?.key === key ? previous : null;
-  if (!files.length && !job) throw new Error("Nenhuma imagem TIFF/JPG/PNG encontrada para processar.");
   if (!job) {
     job = {
       key,
@@ -196,10 +206,13 @@ async function runPanel50Batch(config, appRoot, payload = {}, actor = null, onPr
     }
   }
 
+  const useSupabaseArtworks = supabaseArtworkService.canWrite(config);
   const needsId = job.items.filter((item) => !item.id);
   if (needsId.length) {
     const reserved = job.items.map((item) => item.id).filter(Boolean);
-    const ids = await googleService.nextAvailableArtworkIds(config, appRoot, needsId.length, reserved);
+    const ids = useSupabaseArtworks
+      ? await supabaseArtworkService.nextAvailableArtworkIds(config, needsId.length, reserved)
+      : await googleService.nextAvailableArtworkIds(config, appRoot, needsId.length, reserved);
     needsId.forEach((item, index) => {
       item.id = ids[index];
     });
@@ -244,40 +257,79 @@ async function runPanel50Batch(config, appRoot, payload = {}, actor = null, onPr
   job.theme = theme;
   writeJson(stateFile, job);
 
-  const toMockup = job.items.filter((item) => item.status !== "error" && !fs.existsSync(item.outputPath));
-  if (toMockup.length) {
-    onProgress({ phase: "Photoshop", current: 0, total: toMockup.length, detail: "Preparando mockups 50X50." });
-    writeJson(statusFile, { phase: "starting", at: new Date().toISOString(), current: 0, total: toMockup.length });
-    writeJson(jsxFile + ".job.json", { mockupPath, driveLocalRoot, items: toMockup });
-    fs.writeFileSync(jsxFile, buildPhotoshopJsx(path.normalize(jsxFile + ".job.json"), path.normalize(statusFile)), "utf8");
-    await runPhotoshopJsx(jsxFile, statusFile, toMockup.length, onProgress);
-  }
+  // ═══ PHOTOSHOP RETRY LOOP — Resilient to crashes ═══
+  for (let attempt = 1; attempt <= MAX_PS_RETRIES; attempt++) {
+    // Step A: Verify which mockups physically exist on disk already
+    reconcilePhysicalMockups(job);
 
-  const psStatus = readJson(statusFile, {});
-  if (Array.isArray(psStatus.items)) {
-    for (const result of psStatus.items) {
-      const item = job.items.find((row) => row.id === String(result.id));
-      if (!item) continue;
-      if (result.status === "mockup_ok" && fs.existsSync(item.outputPath)) {
-        item.status = item.status === "upload_ok" ? "upload_ok" : "mockup_ok";
-        item.error = "";
-      } else if (result.status === "error") {
-        item.status = "error";
-        item.error = result.error || "Falha no Photoshop.";
+    // Step B: Filter only items that still need a mockup
+    const toMockup = job.items.filter(
+      (item) => item.status !== "error" && item.status !== "upload_ok" && item.status !== "mockup_ok"
+        && (!fs.existsSync(item.outputPath) || fileSize(item.outputPath) < MIN_MOCKUP_BYTES)
+    );
+    if (!toMockup.length) break; // All mockups are done
+
+    const isRetry = attempt > 1;
+    const totalOriginal = job.items.filter((item) => item.status !== "error").length;
+    const alreadyDone = totalOriginal - toMockup.length;
+
+    onProgress({
+      phase: "Photoshop",
+      current: alreadyDone,
+      total: totalOriginal,
+      detail: isRetry
+        ? `Retentativa ${attempt}/${MAX_PS_RETRIES} — ${toMockup.length} mockup(s) restante(s). ${alreadyDone} já gerado(s).`
+        : `Preparando ${toMockup.length} mockups 50X50.`,
+    });
+
+    try {
+      writeJson(statusFile, { phase: "starting", at: new Date().toISOString(), current: 0, total: toMockup.length });
+      writeJson(jsxFile + ".job.json", { mockupPath, driveLocalRoot, items: toMockup });
+      fs.writeFileSync(jsxFile, buildPhotoshopJsx(path.normalize(jsxFile + ".job.json"), path.normalize(statusFile)), "utf8");
+      await runPhotoshopJsx(jsxFile, statusFile, toMockup.length, onProgress);
+
+      // Success — apply results and break
+      applyPartialResults(job, statusFile);
+      reconcilePhysicalMockups(job);
+      break;
+    } catch (err) {
+      // Crash detected — salvage whatever was generated before the crash
+      applyPartialResults(job, statusFile);
+      reconcilePhysicalMockups(job);
+      writeJson(stateFile, { ...job, updatedAt: new Date().toISOString() });
+
+      const savedCount = job.items.filter((item) => item.status === "mockup_ok" || item.status === "upload_ok").length;
+
+      if (attempt === MAX_PS_RETRIES) {
+        // All retries exhausted — do NOT throw, continue to upload what we have
+        onProgress({
+          phase: "Aviso",
+          current: savedCount,
+          total: totalOriginal,
+          detail: `Photoshop falhou ${MAX_PS_RETRIES}x. ${savedCount} mockup(s) gerado(s) — prosseguindo com upload do que foi possível.`,
+        });
+      } else {
+        onProgress({
+          phase: "Recuperando",
+          current: savedCount,
+          total: totalOriginal,
+          detail: `Crash detectado (${err.message || "erro COM"}). ${savedCount} mockup(s) salvos. Aguardando ${RETRY_DELAY_MS / 1000}s antes da tentativa ${attempt + 1}...`,
+        });
+        await sleep(RETRY_DELAY_MS);
       }
     }
   }
 
-  for (const item of job.items) {
-    if (item.status !== "upload_ok" && fs.existsSync(item.outputPath)) {
-      item.status = "mockup_ok";
-    }
-  }
+  // Final reconciliation after all attempts
+  reconcilePhysicalMockups(job);
   writeJson(stateFile, { ...job, updatedAt: new Date().toISOString() });
 
   if (uploadAfter) {
-    const existingRows = await googleService.listArtworks(config, appRoot).catch(() => []);
-    const existingIds = new Set(existingRows.map((row) => String(row.id || "").trim()).filter(Boolean));
+    const existingIds = useSupabaseArtworks
+      ? await supabaseArtworkService.usedArtworkIds(config)
+      : new Set((await googleService.listArtworks(config, appRoot).catch(() => []))
+        .map((row) => String(row.id || "").trim())
+        .filter(Boolean));
     for (const item of job.items) {
       if (item.status === "mockup_ok" && existingIds.has(String(item.id))) {
         item.status = "upload_ok";
@@ -297,8 +349,27 @@ async function runPanel50Batch(config, appRoot, payload = {}, actor = null, onPr
         path: item.outputPath,
       }));
     if (rows.length) {
-      onProgress({ phase: "Upload", current: 0, total: rows.length, detail: "Subindo mockups para Drive e planilha." });
-      const result = await googleService.uploadBatch({ ...config, operatorName: actor?.name || config.operatorName }, appRoot, rows, onProgress);
+      onProgress({
+        phase: "Upload",
+        current: 0,
+        total: rows.length,
+        detail: "Subindo mockups para Drive e Supabase.",
+      });
+      const uploadConfig = { ...config, operatorName: actor?.name || config.operatorName };
+      const result = await googleService.uploadBatch(uploadConfig, appRoot, rows, onProgress, {
+        persistArtwork: useSupabaseArtworks
+          ? (artwork) => supabaseArtworkService.upsertImportedArtwork(uploadConfig, artwork)
+          : null,
+        usedArtworkIds: useSupabaseArtworks
+          ? () => supabaseArtworkService.usedArtworkIds(uploadConfig)
+          : null,
+        acquireGlobalLock: useSupabaseArtworks
+          ? () => supabaseCoordinationService.acquireOperationLock(uploadConfig, "CADASTRO_ARTE", 15)
+          : null,
+        releaseGlobalLock: useSupabaseArtworks
+          ? (lock) => supabaseCoordinationService.releaseOperationLock(uploadConfig, lock?.id)
+          : null,
+      });
       const uploaded = new Set(result.successes.map((row) => String(row.id)));
       for (const item of job.items) {
         if (uploaded.has(String(item.id))) item.status = "upload_ok";
@@ -320,6 +391,61 @@ async function runPanel50Batch(config, appRoot, payload = {}, actor = null, onPr
   writeJson(stateFile, job);
   onProgress({ phase: "Concluido", current: job.items.filter((item) => item.status === "upload_ok").length, total: job.items.length, detail: "Automacao finalizada." });
   return summarizeJob(job);
+}
+
+// ═══ RESILIENCE HELPERS ═══
+
+/**
+ * Scan the disk for mockup JPGs that already exist and mark the corresponding
+ * job items as "mockup_ok". This ensures that even if the status file was
+ * never updated (e.g. hard crash), we don't re-generate existing work.
+ */
+function reconcilePhysicalMockups(job) {
+  for (const item of job.items) {
+    if (item.status === "upload_ok") continue; // already uploaded, don't downgrade
+    if (item.status === "error" && !item.outputPath) continue; // truly broken
+    if (item.outputPath && fs.existsSync(item.outputPath) && fileSize(item.outputPath) >= MIN_MOCKUP_BYTES) {
+      item.status = "mockup_ok";
+      item.error = "";
+    }
+  }
+}
+
+/**
+ * Read the Photoshop status file (written by the JSX during execution) and
+ * apply any partial results to the job. This captures progress that happened
+ * between the last status-file write and the crash.
+ */
+function applyPartialResults(job, statusFile) {
+  const psStatus = readJson(statusFile, {});
+  if (!Array.isArray(psStatus.items)) return;
+  for (const result of psStatus.items) {
+    const item = job.items.find((row) => row.id === String(result.id));
+    if (!item) continue;
+    if (result.status === "mockup_ok") {
+      if (item.status !== "upload_ok") {
+        item.status = "mockup_ok";
+        item.error = "";
+      }
+    } else if (result.status === "error") {
+      item.status = "error";
+      item.error = result.error || "Falha no Photoshop.";
+    }
+  }
+}
+
+/** Returns file size in bytes, or 0 if the file doesn't exist. */
+function fileSize(filePath) {
+  try {
+    return fs.statSync(filePath).size;
+  } catch {
+    return 0;
+  }
+}
+
+/** Simple async delay. */
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function summarizeJob(job) {

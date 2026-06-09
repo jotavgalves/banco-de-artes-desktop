@@ -2,10 +2,10 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { app } = require("electron");
 const googleService = require("./googleService");
-const { BASE_SHEETS, OPERATIONAL_SHEETS } = require("../shared/defaults");
+const supabaseArtworkService = require("./supabaseArtworkService");
 const { loadConfig } = require("./configStore");
 
-// Sincronizador periódico de dados (Cache Json) da Planilha Central
+// Sincronizador periódico de dados do cache local.
 let syncInterval = null;
 let isSyncing = false;
 
@@ -56,88 +56,50 @@ async function runSync() {
   const config = loadConfig();
   const cache = getCache(config);
   try {
-    const authStatus = await googleService.authStatus(config, app.getAppPath());
-    if (!authStatus.authenticated || !config.baseSpreadsheetId) {
-      isSyncing = false;
-      return cache;
-    }
-
-    const { sheets, drive } = await googleService.services(config, app.getAppPath());
-    
-    // Ler base
-    const baseData = await sheets.spreadsheets.values.batchGet({
-      spreadsheetId: config.baseSpreadsheetId,
-      ranges: [
-        `'${BASE_SHEETS.users.name}'!A2:E`,
-        `'${BASE_SHEETS.config.name}'!A2:B`,
-        `'${BASE_SHEETS.execution.name}'!G2:H2`,
-      ]
-    }).catch(() => ({ data: { valueRanges: [] } }));
-    
-    const usersRows = baseData.data.valueRanges?.[0]?.values || [];
-    const configRows = baseData.data.valueRanges?.[1]?.values || [];
-    const globalRows = baseData.data.valueRanges?.[2]?.values || [];
-
-    const users = usersRows.map(row => ({
-      login: row[0] || "",
-      name: row[1] || "",
-      role: row[2] || "operator",
-      active: row[3] === "TRUE",
-      password: row[4] || "", // Hashed
-    })).filter(u => u.login);
-
-    const configs = {};
-    for (const [k, v] of configRows) {
-      if (k) configs[k] = v;
-    }
-
-    // Lendo a planilha operacional (IDs para barragem)
-    let artworksMap = {};
-    if (config.operationalSpreadsheetId) {
-       const artRows = await googleService.readCadastroRows(sheets, config).catch(() => []);
-       for (const row of artRows) {
-          const id = row[0];
-          if (id) artworksMap[id.toString()] = true;
-       }
-    }
-
-    let globalSessions = [];
-    let globalReservations = [];
-    try {
-      if (globalRows[0] && globalRows[0][0]) globalSessions = JSON.parse(globalRows[0][0]);
-    } catch {}
-    try {
-      if (globalRows[0] && globalRows[0][1]) globalReservations = JSON.parse(globalRows[0][1]);
-    } catch {}
-
-    let driveFolders = cache.driveFolders || { themes: {} };
-    if (config.driveFolderName) {
-      const rootFolderId = await googleService.findOrCreateFolder(drive, config.driveFolderName).catch(() => "");
-      if (rootFolderId) {
-        driveFolders = await googleService.syncThemeFolderCache(config, drive, rootFolderId).catch(() => driveFolders);
-      }
-    }
-
-    const nextCache = {
-      ...cache,
-      users,
-      configs,
-      artworksMap,
-      sessions: globalSessions,
-      reservations: globalReservations,
-      driveFolders,
-      lastSync: new Date().toISOString(),
-    };
-
-    fs.writeFileSync(cachePath(config), JSON.stringify(nextCache, null, 2), "utf8");
+    const nextCache = await runOfficialSync(config, cache);
     isSyncing = false;
     return nextCache;
-
   } catch (error) {
     console.error("Sync Error:", error.message);
     isSyncing = false;
     return cache;
   }
+}
+
+async function runOfficialSync(config, cache) {
+  let artworksMap = cache.artworksMap || {};
+  if (supabaseArtworkService.canRead(config)) {
+    const artworks = await supabaseArtworkService.listArtworks(config).catch(() => []);
+    artworksMap = {};
+    for (const row of artworks) {
+      const id = String(row.id || "").trim();
+      if (id) artworksMap[id] = true;
+    }
+  }
+
+  let driveFolders = cache.driveFolders || { themes: {} };
+  const authStatus = await googleService.authStatus(config, app.getAppPath()).catch(() => ({ authenticated: false }));
+  if (authStatus.authenticated && config.driveFolderName) {
+    const { drive } = await googleService.services(config, app.getAppPath());
+    const rootFolderId = await googleService.findOrCreateFolder(drive, config.driveFolderName).catch(() => "");
+    if (rootFolderId) {
+      driveFolders = await googleService.syncThemeFolderCache(config, drive, rootFolderId).catch(() => driveFolders);
+    }
+  }
+
+  const nextCache = {
+    ...cache,
+    users: [],
+    reservations: cache.reservations || [],
+    sessions: cache.sessions || [],
+    configs: {},
+    artworksMap,
+    driveFolders,
+    source: "supabase",
+    lastSync: new Date().toISOString(),
+  };
+  fs.writeFileSync(cachePath(config), JSON.stringify(nextCache, null, 2), "utf8");
+  return nextCache;
 }
 
 function startPeriodicSync() {

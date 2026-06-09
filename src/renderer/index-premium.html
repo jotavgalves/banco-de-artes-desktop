@@ -1,14 +1,15 @@
 <!DOCTYPE html>
 
-<html data-theme="dark" lang="pt-BR">
+<html data-theme="light" lang="pt-BR">
 <head>
 <meta charset="utf-8"/>
 <meta content="default-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://fonts.gstatic.com; img-src 'self' data: file: https:; connect-src 'self' https:;" http-equiv="Content-Security-Policy"/>
+<meta content="width=device-width, initial-scale=1, viewport-fit=cover" name="viewport"/>
+<meta content="#fffaf6" name="theme-color"/>
 <title>Banco de Artes Pro</title>
-<!-- Premium Fonts -->
 <link href="https://fonts.googleapis.com" rel="preconnect"/>
 <link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
-<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;family=Sora:wght@600;700;800&amp;family=JetBrains+Mono:wght@500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700;800;900&amp;family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&amp;display=swap" rel="stylesheet"/>
 <link href="./styles-premium.css" rel="stylesheet"/>
 </head>
 <body>
@@ -19,15 +20,15 @@
 <div class="brand-mark">BA</div>
 <div>
 <strong>Banco de Artes</strong>
-<span>Asset Command</span>
+<span>Operação visual da Armazém</span>
 </div>
 </div>
-<h1 id="loginHeadline">Banco visual,<br/>produção sob controle.</h1>
-<p id="loginPhrase">Uma central premium para cadastrar, revisar, encontrar e publicar artes com ID seguro, Drive, planilha e histórico operacional.</p>
+<h1 id="loginHeadline">Produção, Drive,<br/>IDs e pedidos.</h1>
+<p id="loginPhrase">Uma central visual para cadastrar, revisar, encontrar e publicar artes com ID seguro, Drive e histórico operacional.</p>
 <div class="login-points">
 <span>ID seguro</span>
 <span>Preview visual</span>
-<span>Drive + Sheets</span>
+<span>Supabase + Drive</span>
 <span>Auditoria viva</span></div>
 </div>
 <div class="login-panel">
@@ -118,23 +119,36 @@
 <div class="live-dot"></div>
 <div>
 <strong class="metric-google-status" id="metricGoogleSidebar">Buscando...</strong>
-<span class="metric-google-sub" id="metricGoogleSubSidebar">Conexão Google</span>
+<span class="metric-google-sub" id="metricGoogleSubSidebar">Conexão Drive</span>
 </div>
 </div>
 </aside>
 <main class="main">
 <div class="topbar">
 <div>
-<h1 id="viewTitle">Central</h1>
-<p class="muted" id="viewSubtitle" style="margin-top:2px">Pulso da operação, integração Google, presença local e indicadores de acervo.</p>
+<p class="eyebrow" id="viewEyebrow">Central</p>
+<h1 id="viewTitle">Operação visual da Armazém.</h1>
+<p class="muted" id="viewSubtitle" style="margin-top:2px">Acompanhe artes, IDs, Drive, pedidos e equipe em um painel com aparência de catálogo premium.</p>
 </div>
+<aside class="hero-side">
+<div class="flow">
+<span><b>1. Cadastrar</b><small>Valide lote e IDs.</small></span>
+<span><b>2. Revisar</b><small>Veja prévias e status.</small></span>
+<span><b>3. Publicar</b><small>Organize no Drive.</small></span>
+<span><b>4. Vender</b><small>Gere pedido por cliente.</small></span>
+</div>
+<div class="promo">
+<b>Banco de Artes Pro</b>
+<p>Fluxos reais do app preservados com a nova direção visual.</p>
+</div>
+</aside>
 </div>
 <!-- ═══ DASHBOARD ═══ -->
 <section class="view active" id="dashboardView">
 <div class="notice">
 <div>
 <strong id="noticeTitle">Google precisa de atenção</strong>
-<span id="noticeText">Conecte sua conta para integrar as planilhas oficiais.</span>
+<span id="noticeText">Conecte sua conta para manter o Drive ativo.</span>
 </div>
 <div class="top-actions">
 <span class="notice-pill" id="noticeState">Configurar</span>
@@ -153,6 +167,11 @@
 <strong id="metricNextId">1</strong>
 <small>Estimativa</small>
 </div>
+<div class="metric reserved-metric">
+<span>IDs reservados</span>
+<strong id="metricReserved">0</strong>
+<small>Protegidos agora</small>
+</div>
 <div class="metric">
 <span>Tema com mais artes</span>
 <strong id="topThemeText">-</strong>
@@ -166,7 +185,7 @@
 </div>
 <div class="dashboard-grid">
 <section class="panel">
-<div class="panel-header"><div><p class="eyebrow">Rede</p><h2>Presença Local</h2></div></div>
+<div class="panel-header"><div><p class="eyebrow">Rede</p><h2>Presença Local</h2></div><span class="pill" id="onlineCount">0 online</span></div>
 <div class="people-list" id="onlineList"></div>
 </section>
 <section class="panel">
@@ -182,22 +201,15 @@
 </section>
 <!-- ═══ BATCH / UPLOAD ═══ -->
 <section class="view" id="batchView">
-<div class="toolbar" style="justify-content: space-between;">
-<div style="display:flex; gap:6px;">
-<button class="primary-button" id="btnScanFiles">Escanear arquivos locais</button>
-<button class="secondary-button" id="btnChooseFolder">Trocar pasta de busca</button>
-<button class="secondary-button" id="btnNewBlankRow">Adicionar linha</button>
-</div>
+<div class="command-bar">
 <div class="segmented">
 <button class="active" id="standardMode">Padrão</button>
 <button id="manualMode">Manual</button>
 </div>
-</div>
-<div class="command-bar">
-<button class="ghost-button" id="parseNamesButton">Ler nomes dos arquivos</button>
 <button class="ghost-button" id="validateRowsButton">Validar lote</button>
 <button class="ghost-button" id="fillFromReservationButton">Usar IDs da Reserva</button>
 <button class="ghost-button" id="removeSelectedButton" style="color:var(--red)">Remover Selecionados</button>
+<span class="batch-action-status" id="batchActionStatus">Valide o lote para ler a pasta configurada e conferir IDs.</span>
 </div>
 <div class="filter-bar batch-filter-bar">
 <div class="search-input-wrapper">
@@ -217,25 +229,21 @@
 </div>
 <section class="panel automation-panel">
 <div class="panel-header">
-<div><p class="eyebrow">Photoshop + Drive</p><h2>Lote painel redondo 50X50</h2></div>
+<div><p class="eyebrow">Automação de produção</p><h2>Renomear, gerar e enviar pasta</h2></div>
 <button class="primary-button" id="runPanel50Button">Renomear, gerar e enviar</button>
 </div>
 <div class="automation-summary">
-<span id="panel50DetectedTheme">Tema: detectado pela pasta SKU</span>
-<span>PAINEL REDONDO</span>
-<span>50X50</span>
+<span id="panel50DetectedTheme">Tema: escolha uma pasta</span>
+<span>Modelo configurável</span>
+<span>Saídas no sistema</span>
 </div>
 <div class="automation-grid">
-<label>Pasta SKU com as artes<input id="panel50InputFolder"/></label>
-<label>Tema<input id="panel50Theme"/></label>
-<label>Temas organizados<input id="panel50OrganizedRoot"/></label>
-<label>Pasta local do Drive<input id="panel50DriveRoot"/></label>
+<label>Pasta com as artes<input id="panel50InputFolder"/></label>
+<label>Tema ou coleção<input id="panel50Theme"/></label>
 </div>
 <div class="field-actions">
-<button class="secondary-button" id="choosePanel50Input" type="button">Escolher pasta SKU</button>
-<button class="secondary-button" id="choosePanel50Organized" type="button">Escolher organizados</button>
-<button class="secondary-button" id="choosePanel50DriveRoot" type="button">Escolher Drive local</button>
-<label class="switch-row" style="margin-left:auto"><input checked="" id="panel50UploadAfter" type="checkbox"/> Enviar ao Drive e planilha ao terminar</label>
+<button class="secondary-button" id="choosePanel50Input" type="button">Escolher pasta</button>
+<label class="switch-row" style="margin-left:auto"><input checked="" id="panel50UploadAfter" type="checkbox"/> Enviar ao Drive ao terminar</label>
 </div>
 <div class="upload-tracker">
 <div class="upload-tracker-head">
@@ -290,19 +298,31 @@
 </section>
 <!-- ═══ ARTES CADASTRADAS ═══ -->
 <section class="view" id="artworksView">
-<div class="links-row" id="artworksLinks"></div>
 <section class="panel" style="display:flex;flex-direction:column;flex:1;min-height:0">
 <div class="panel-header">
-<div><p class="eyebrow">Planilha de artes</p><h2>Consulta, prévia e edição</h2></div>
+<div><p class="eyebrow">Banco visual</p><h2>Consulta, prévia e edição</h2></div>
 <div class="top-actions">
 <button aria-label="Ativar ferramentas de edição" class="icon-btn" id="artworkToolsButton" title="Ativar ferramentas">
 <svg viewBox="0 0 24 24"><path d="M19.43 12.98c.04-.32.07-.65.07-.98s-.02-.66-.07-.98l2.11-1.65c.19-.15.24-.42.12-.64l-2-3.46c-.12-.22-.37-.31-.6-.22l-2.49 1a7.34 7.34 0 0 0-1.69-.98L14.5 2.42A.49.49 0 0 0 14 2h-4c-.25 0-.46.18-.5.42L9.12 5.07c-.61.24-1.18.56-1.69.98l-2.49-1a.51.51 0 0 0-.6.22l-2 3.46c-.12.22-.07.49.12.64l2.11 1.65c-.05.32-.07.65-.07.98s.02.66.07.98l-2.11 1.65a.5.5 0 0 0-.12.64l2 3.46c.12.22.37.31.6.22l2.49-1c.51.4 1.08.73 1.69.98l.38 2.65c.04.24.25.42.5.42h4c.25 0 .46-.18.5-.42l.38-2.65c.61-.24 1.18-.56 1.69-.98l2.49 1c.23.08.48 0 .6-.22l2-3.46a.5.5 0 0 0-.12-.64l-2.11-1.65zM12 15.5A3.5 3.5 0 1 1 12 8a3.5 3.5 0 0 1 0 7.5z"></path></svg>
+</button>
+<button class="secondary-button icon-text-button hidden" id="saveAllArtworksButton" type="button">
+<svg viewBox="0 0 24 24"><path d="M17 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V7l-4-4zM12 19a3 3 0 1 1 0-6 3 3 0 0 1 0 6zM6 8V5h9v3H6z"/></svg>
+<span>Salvar tudo</span>
+</button>
+<button class="secondary-button icon-text-button danger-button hidden" id="deleteSelectedArtworksButton" type="button">
+<svg viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM8 9h8v10H8V9zm7.5-5-1-1h-5l-1 1H5v2h14V4h-3.5z"/></svg>
+<span>Excluir selecionadas</span>
 </button>
 <select id="artworkSort">
 <option value="desc">Maior ID primeiro</option>
 <option value="asc">Menor ID primeiro</option>
 </select>
+<div class="segmented compact-segmented" id="artworkViewMode" aria-label="Modo de visualização">
+<button class="active" data-artwork-view-mode="cards" type="button">Vitrine</button>
+<button data-artwork-view-mode="table" type="button">Tabela</button>
+</div>
 <button class="secondary-button" id="reloadArtworksButton">Atualizar agora</button>
+<button class="secondary-button" id="refreshMissingArtworkImagesButton" type="button">Atualizar imagens</button>
 </div>
 </div>
 <div class="filter-bar">
@@ -315,9 +335,10 @@
 <select id="artworkFilterUser"><option value="all">Cadastrado por</option></select>
 <button class="secondary-button" id="artworkClearFilters">Limpar filtros</button>
 </div>
-<div class="table-wrap">
+<div class="artwork-card-grid" id="artworkCardGrid"></div>
+<div class="table-wrap hidden" id="artworkTableWrap">
 <table>
-<thead><tr><th>Img</th><th>ID</th><th>TEMA</th><th>PRODUTO</th><th>TAMANHO</th><th>CLIENTE</th><th>CADASTRADO POR</th><th>DATA</th><th>Ações</th></tr></thead>
+<thead><tr><th class="art-select-col"><input id="selectAllArtworks" type="checkbox" aria-label="Selecionar todas as artes"/></th><th>Img</th><th>ID</th><th>TEMA</th><th>PRODUTO</th><th>TAMANHO</th><th>CLIENTE</th><th>CADASTRADO POR</th><th>DATA</th><th>Ações</th></tr></thead>
 <tbody id="artworkRows"></tbody>
 </table>
 </div>
@@ -352,7 +373,7 @@
 </div>
 <div class="finance-hero">
 <div>
-<strong>Pedidos por código, sem planilha aberta</strong>
+<strong>Pedidos por código, sem trocar de tela</strong>
 <span>Escolha cliente, adicione IDs, valide prévias e copie o lançamento final com menos erro.</span>
 </div>
 <div class="finance-stat"><span id="financeClientCount">0</span><small>clientes encontrados</small></div>
@@ -389,7 +410,7 @@
 <div class="two-col-layout">
 <aside class="two-col-sidebar">
 <div class="panel-header">
-<div><p class="eyebrow">AÇÃO</p><h2>Formulário</h2></div>
+<div><p class="eyebrow">Equipe</p><h2>Novo ou edição</h2></div>
 </div>
 <div class="user-tabs">
 <button class="active" id="tabNewUser" type="button">Novo usuário</button>
@@ -446,41 +467,53 @@
 <form class="panel" id="settingsForm" style="display:flex;flex-direction:column;flex:1;min-height:0">
 <div class="grid-50-50">
 <section style="display:flex;flex-direction:column">
-<div class="panel-header"><div><p class="eyebrow">Google</p><h2>Integrações da Nuvem</h2></div></div>
+<div class="panel-header"><div><p class="eyebrow">Nuvem</p><h2>Drive e base oficial</h2></div></div>
 <label>Pasta fixa de dados<input name="fixedDataFolder"/></label>
-<label>Raiz painel redondo 50X50<input name="panel50SourceRoot"/></label>
-<label>Temas organizados 50X50<input name="panel50OrganizedRoot"/></label>
-<label>Pasta local do Drive 50X50<input name="panel50DriveLocalRoot"/></label>
-<label>Mockup painel redondo 50X50<input name="panel50MockupPath"/></label>
+<label>Raiz padrão de entrada<input name="panel50SourceRoot"/></label>
+<label>Pasta de organizados<input id="panel50OrganizedRoot" name="panel50OrganizedRoot"/></label>
+<label>Pasta local de saída<input id="panel50DriveRoot" name="panel50DriveLocalRoot"/></label>
+<label>Mockup padrão Photoshop<input id="panel50MockupPath" name="panel50MockupPath"/></label>
 <label>Pasta dos clientes<input name="financialClientRoot"/></label>
 <label>Arquivo de credenciais<input name="credentialsPath" placeholder="Deixe vazio para padrão"/></label>
-<label>Nome da planilha central<input name="baseSpreadsheetName"/></label>
-<label>ID da planilha central
-                  <div class="copy-input-wrapper">
-<input name="baseSpreadsheetId"/>
-<button class="copy-btn" type="button">Copiar</button>
-</div>
-</label>
-<label>ID da planilha de artes
-                  <div class="copy-input-wrapper">
-<input name="operationalSpreadsheetId"/>
-<button class="copy-btn" type="button">Copiar</button>
-</div>
-</label>
 <div class="field-actions" style="margin-bottom:16px">
-<button class="secondary-button" id="validateSheetButton" type="button">Testar conexão</button>
 <button class="secondary-button" id="testConnectivityButton" type="button">Testar tudo</button>
-<span class="inline-status" id="sheetValidationStatus">Não testada</span>
+<span class="inline-status" id="connectionValidationStatus">Não testada</span>
 </div>
 <div class="diagnostic-list" id="connectivityResults"></div>
 <label>Pasta raiz no Drive<input name="driveFolderName"/></label>
+<div class="panel-header" style="margin-top:14px"><div><p class="eyebrow">Supabase</p><h2>Base oficial</h2></div></div>
+<div class="toggle-row">
+<div>
+<strong>Ativar camada Supabase</strong>
+<span style="display:block;font-size:11px;color:var(--text-3)">Supabase é a base oficial; Google fica para arquivos no Drive.</span>
+</div>
+<label class="switch-row"><input name="supabaseEnabled" type="checkbox"/></label>
+</div>
+<label>URL do projeto Supabase<input name="supabaseUrl" placeholder="https://xxxx.supabase.co"/></label>
+<label>Chave publicável Supabase<input name="supabasePublishableKey" placeholder="sb_publishable_..."/></label>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+<label>Modo de leitura
+  <select name="supabaseReadMode">
+    <option value="google">Legado local</option>
+    <option value="supabase-readonly">Supabase somente leitura</option>
+    <option value="supabase">Supabase oficial</option>
+  </select>
+</label>
+</div>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+<label>Login
+  <select name="supabaseAuthMode">
+    <option value="local">Login local atual</option>
+    <option value="hybrid">Supabase + fallback local</option>
+    <option value="supabase">Supabase obrigatório</option>
+  </select>
+</label>
+<label>Domínio técnico dos usuários<input name="supabaseAuthEmailDomain" placeholder="bancodeartes.local"/></label>
+</div>
+<div class="diagnostic-item" id="supabaseStatusBox"><strong>Supabase em preparação</strong><span>Informe URL e chave publicável para testar.</span></div>
 </section>
 <section style="display:flex;flex-direction:column;padding-left:10px">
 <div class="panel-header"><div><p class="eyebrow">Regras</p><h2>Políticas e Parâmetros</h2></div></div>
-<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-<label>Aba de cadastro<input name="cadastroSheetName"/></label>
-<label>Aba de logs<input name="operationalLogsSheetName"/></label>
-</div>
 <label>Pastas de imagens locais (uma por linha)<textarea name="localImageFolders" rows="2"></textarea></label>
 <label>Produtos válidos (um por linha)<textarea name="validProducts" rows="3"></textarea></label>
 <label>Medidas por produto (Produto: tam1, tam2)<textarea name="productSizes" rows="4"></textarea></label>
@@ -526,6 +559,14 @@
 <div class="spinner"></div>
 <span id="globalOverlayText">Carregando...</span>
 </div>
+<div class="global-progress hidden" id="globalProgress" role="status" aria-live="polite">
+<div class="global-progress-head">
+<strong id="globalProgressTitle">Processando</strong>
+<span id="globalProgressPercent">0%</span>
+</div>
+<div class="global-progress-track"><span id="globalProgressBar"></span></div>
+<small id="globalProgressDetail">Aguarde...</small>
+</div>
 <div aria-labelledby="orderModalTitle" aria-modal="true" class="modal hidden premium-modal" id="orderModal" role="dialog">
 <div class="modal-card order-modal-card">
 <div class="modal-toolbar order-modal-header">
@@ -536,6 +577,7 @@
 <button aria-label="Fechar pedido" class="ghost-button modal-close" id="closeOrderModalButton">Fechar</button>
 </div>
 <div class="order-modal-body">
+<div class="order-modal-side">
 <section class="order-section">
 <label>Cliente
               <input autocomplete="off" id="financeClientInput" placeholder="Digite nome ou código"/>
@@ -551,6 +593,7 @@
 </label>
 <div class="order-feedback" id="financeSummary">Nenhuma arte adicionada.</div>
 </section>
+</div>
 <section class="order-section order-gallery-section">
 <div class="section-title-row">
 <strong>Artes do pedido</strong>
@@ -582,16 +625,41 @@
 </div>
 </div>
 <div class="modal hidden" id="previewModal">
-<div class="modal-card">
+<div class="modal-card preview-modal-card">
 <div class="modal-toolbar">
-<strong>Prévia da arte</strong>
-<button class="ghost-button modal-close" id="closePreviewButton">
-<svg fill="currentColor" height="16" style="margin-right:4px;vertical-align:middle;" viewBox="0 0 24 24" width="16"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"></path></svg> Fechar
-          </button>
+<div><p class="eyebrow">Prévia da arte</p><strong id="previewTitle">Visualização</strong><span id="previewMeta" class="preview-meta">Imagem cadastrada</span></div>
+<button class="ghost-button modal-close icon-text-button" id="closePreviewButton" type="button">
+<svg fill="currentColor" viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"></path></svg><span>Fechar</span>
+</button>
 </div>
 <div class="preview-square">
 <iframe id="drivePreviewFrame"></iframe>
 <img alt="Preview da arte" id="localPreviewImage"/>
+<div class="preview-fallback hidden" id="previewFallback">
+<svg viewBox="0 0 24 24"><path d="M21 19V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2zM8.5 11.5l2.5 3.01L14.5 10l4.5 6H5l3.5-4.5z"/></svg>
+<strong>Prévia indisponível</strong>
+<span>Atualize a URL da arte ou encontre o arquivo local.</span>
+</div>
+</div>
+</div>
+</div>
+<div class="modal hidden" id="findArtworkModal">
+<div class="modal-card find-modal-card">
+<div class="modal-toolbar">
+<div><p class="eyebrow">Encontrar arte</p><strong id="findArtworkTitle">Localizar arquivos</strong><span id="findArtworkMeta" class="preview-meta">Escolha onde procurar este ID.</span></div>
+<button class="ghost-button modal-close icon-text-button" id="closeFindArtworkButton" type="button">
+<svg fill="currentColor" viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"></path></svg><span>Fechar</span>
+</button>
+</div>
+<div class="find-options">
+<button class="secondary-button find-option" id="findDriveLocalButton" type="button">
+<svg viewBox="0 0 24 24"><path d="M3 6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6z"/></svg>
+<strong>Drive local</strong><span>Abre a pasta do ID na saída local do Drive.</span>
+</button>
+<button class="secondary-button find-option" id="findOrganizedLocalButton" type="button">
+<svg viewBox="0 0 24 24"><path d="M10 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-8l-2-2z"/></svg>
+<strong>Artes locais</strong><span>Procura o ID na pasta de organizados.</span>
+</button>
 </div>
 </div>
 </div>

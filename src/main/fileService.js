@@ -1,7 +1,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
-const { dialog, nativeImage } = require("electron");
+const { dialog, nativeImage, shell } = require("electron");
 
 function resolveFolder(baseDir, folder) {
   if (path.isAbsolute(folder)) return folder;
@@ -73,9 +73,63 @@ async function chooseMockupFile(window) {
   return result.filePaths[0];
 }
 
+function isSystemEntry(name = "") {
+  return ["thumbs.db", ".ds_store"].includes(String(name).toLowerCase());
+}
+
+function containsArtworkId(value, id) {
+  const text = String(value || "");
+  const target = String(id || "").trim();
+  if (!target) return false;
+  const escaped = target.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(^|\\D)${escaped}(?!\\d)`).test(text);
+}
+
+function findFolderByArtworkId(rootFolder, id) {
+  const root = String(rootFolder || "").trim();
+  const target = String(id || "").trim();
+  if (!root) throw new Error("Pasta local não configurada.");
+  if (!fs.existsSync(root)) throw new Error(`Pasta não encontrada: ${root}`);
+  if (!target) throw new Error("ID da arte não informado.");
+
+  const queue = [root];
+  let fallback = "";
+  let inspected = 0;
+  while (queue.length && inspected < 5000) {
+    const current = queue.shift();
+    inspected += 1;
+    let entries = [];
+    try {
+      entries = fs.readdirSync(current, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      if (!entry.isDirectory() || isSystemEntry(entry.name)) continue;
+      const fullPath = path.join(current, entry.name);
+      if (entry.name === target) return fullPath;
+      if (!fallback && containsArtworkId(entry.name, target)) fallback = fullPath;
+      queue.push(fullPath);
+    }
+  }
+  if (fallback) return fallback;
+  throw new Error(`Não encontrei pasta para o ID ${target}.`);
+}
+
+async function openArtworkFolder(config, type, id) {
+  const root = type === "drive-local" ? config.panel50DriveLocalRoot : config.panel50OrganizedRoot;
+  const folder = findFolderByArtworkId(root, id);
+  const result = await shell.openPath(folder);
+  if (result) throw new Error(result);
+  return { ok: true, folder };
+}
+
 module.exports = {
   listCandidateImages,
   chooseImageFolder,
   chooseMockupFile,
   thumbnailForFile,
+  containsArtworkId,
+  findFolderByArtworkId,
+  openArtworkFolder,
 };
