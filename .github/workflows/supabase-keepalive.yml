@@ -1,0 +1,39 @@
+name: Supabase Keepalive
+
+on:
+  schedule:
+    - cron: "23 9 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ping:
+    name: Daily heartbeat
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      SUPABASE_URL: https://tviagmllvnhnrumhmeli.supabase.co
+      SUPABASE_PUBLISHABLE_KEY: sb_publishable_UVda8gD9YMptpWTfJLaeTA_3KJmBe-w
+    steps:
+      - name: Register heartbeat
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          response="$(curl -sS -w '\n%{http_code}' \
+            --request POST "$SUPABASE_URL/rest/v1/rpc/record_project_heartbeat" \
+            --header "apikey: $SUPABASE_PUBLISHABLE_KEY" \
+            --header "Authorization: Bearer $SUPABASE_PUBLISHABLE_KEY" \
+            --header "Content-Type: application/json" \
+            --data '{"p_source":"github-actions"}')"
+
+          body="$(printf '%s' "$response" | sed '$d')"
+          status="$(printf '%s' "$response" | tail -n1)"
+
+          echo "$body"
+          if [ "$status" -lt 200 ] || [ "$status" -gt 299 ]; then
+            echo "Supabase heartbeat failed with HTTP $status" >&2
+            exit 1
+          fi
