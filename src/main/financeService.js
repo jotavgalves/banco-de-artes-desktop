@@ -1,6 +1,8 @@
 const fs = require("node:fs");
+const fsPromises = require("node:fs").promises;
 const path = require("node:path");
 const { thumbnailForFile } = require("./fileService");
+const syncService = require("./syncService");
 
 const SYSTEM_FILES = new Set(["thumbs.db", ".ds_store"]);
 
@@ -84,6 +86,36 @@ async function locateArtwork(config, id) {
   if (!/^\d+$/.test(wanted)) throw new Error(`Código inválido: ${id}`);
   const root = organizedRoot(config);
   if (!fs.existsSync(root)) return { id: wanted, found: false, files: [] };
+
+  // Fast path via cache
+  const cache = syncService.getCache(config);
+  const themeHint = cache.artworksMap?.[wanted];
+  if (typeof themeHint === "string" && themeHint !== "true") {
+    const expectedPath = path.join(root, themeHint, wanted);
+    if (fs.existsSync(expectedPath)) {
+      const entries = fs.readdirSync(expectedPath, { withFileTypes: true });
+      const files = entries
+        .filter((entry) => entry.isFile() && !SYSTEM_FILES.has(entry.name.toLowerCase()))
+        .map((entry) => path.join(expectedPath, entry.name));
+      if (files.length > 0) {
+        return {
+          id: wanted,
+          found: true,
+          theme: themeHint,
+          folder: expectedPath,
+          files,
+          previews: await Promise.all(files.map(async (file) => ({
+            path: file,
+            name: path.basename(file),
+            previewUrl: await thumbnailForFile(file, path.extname(file).toLowerCase()),
+            sizeBytes: fs.statSync(file).size,
+          }))),
+        };
+      }
+    }
+  }
+
+  // Fallback slow path
   const stack = [root];
   while (stack.length) {
     const current = stack.pop();
@@ -118,16 +150,23 @@ async function previewOrder(config, ids) {
   return Promise.all(uniqueIds.map((id) => locateArtwork(config, id)));
 }
 
-async function copyOrder(config, payload = {}) {
+async function copyOrder(config, payload = {}, onProgress = null) {
   const client = resolveClient(config, payload.clientQuery, payload.newClientName);
   const items = await previewOrder(config, payload.ids);
   const missing = items.filter((item) => !item.found);
   if (missing.length) throw new Error(`Arte não encontrada: ${missing.map((item) => item.id).join(", ")}`);
+  
   const copied = [];
+  let totalFiles = 0;
+  for (const item of items) totalFiles += item.files.length;
+  let copiedCount = 0;
+
   for (const item of items) {
     for (const source of item.files) {
       const destination = path.join(client.path, path.basename(source));
-      fs.copyFileSync(source, destination);
+      await fsPromises.copyFile(source, destination);
+      copiedCount++;
+      if (onProgress) onProgress({ current: copiedCount, total: totalFiles, filename: path.basename(source) });
       copied.push({ id: item.id, source, destination, theme: item.theme });
     }
   }

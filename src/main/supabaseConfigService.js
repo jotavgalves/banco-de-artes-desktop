@@ -55,10 +55,52 @@ async function migrateLocalConfigIfMissing(config = {}) {
   return saveAppConfig(config);
 }
 
+async function saveGoogleCredentials(config = {}, credentialsJson, tokenJson) {
+  if (!canUseRemoteConfig(config)) return false;
+  if (session()?.profile?.role !== "admin") throw new Error("Ação restrita ao admin.");
+  const supabase = client(config);
+  const now = new Date().toISOString();
+  const { error } = await supabase
+    .from("system_settings")
+    .upsert({
+      key: "google_credentials",
+      value: {
+        credentials: credentialsJson,
+        token: tokenJson,
+        tokenUpdatedAt: now,
+        tokenUpdatedBy: session()?.profile?.login || session()?.profile?.id || null,
+      },
+      updated_by: session()?.profile?.id || null,
+      updated_at: now,
+    }, { onConflict: "key" });
+  if (error) throw new Error(error.message);
+  return true;
+}
+
+async function loadGoogleCredentials(config = {}) {
+  if (!canUseRemoteConfig(config)) return null;
+  const supabase = client(config);
+  const { data, error } = await supabase
+    .from("system_settings")
+    .select("value")
+    .eq("key", "google_credentials")
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data?.value || typeof data.value !== "object") return null;
+  return {
+    credentials: data.value.credentials,
+    token: data.value.token,
+    tokenUpdatedAt: data.value.tokenUpdatedAt || null,
+    tokenUpdatedBy: data.value.tokenUpdatedBy || null,
+  };
+}
+
 module.exports = {
   APP_CONFIG_KEY,
   canUseRemoteConfig,
   loadAppConfig,
   migrateLocalConfigIfMissing,
   saveAppConfig,
+  saveGoogleCredentials,
+  loadGoogleCredentials,
 };

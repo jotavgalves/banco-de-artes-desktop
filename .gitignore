@@ -21,6 +21,7 @@ credentials.json
 
 # Local shortcuts and OS files
 *.lnk
+invisivel.vbs
 desktop.ini
 folderico-*.ico
 Thumbs.db

@@ -19,6 +19,7 @@ const SIZE = "50X50";
 const DEFAULT_SOURCE_ROOT = "";
 const DEFAULT_ORGANIZED_ROOT = "X:\\1 - TEMAS ORGANIZADOS";
 const DEFAULT_DRIVE_LOCAL_ROOT = "X:\\2 - DRIVE";
+const SAFE_EMPTY_FOLDER_FILES = new Set(["thumbs.db", ".ds_store"]);
 
 function fixedDataDir(config) {
   const preferred = config.fixedDataFolder || "C:\\BancoDeArtes";
@@ -113,19 +114,25 @@ function managedArtworkName(id, theme, extension) {
 
 function isFolderEmpty(folderPath) {
   if (!fs.existsSync(folderPath)) return false;
-  const entries = fs.readdirSync(folderPath).filter((name) => !["thumbs.db", ".ds_store"].includes(name.toLowerCase()));
+  const entries = fs.readdirSync(folderPath).filter((name) => !SAFE_EMPTY_FOLDER_FILES.has(name.toLowerCase()));
   return entries.length === 0;
 }
 
 function removeFolderIfEmpty(folderPath) {
   if (!isFolderEmpty(folderPath)) return false;
   for (const name of fs.readdirSync(folderPath)) {
-    if (["thumbs.db", ".ds_store"].includes(name.toLowerCase())) {
+    if (SAFE_EMPTY_FOLDER_FILES.has(name.toLowerCase())) {
       fs.rmSync(path.join(folderPath, name), { force: true });
     }
   }
   fs.rmdirSync(folderPath);
   return true;
+}
+
+function ensureDirWithStatus(dir) {
+  const existed = fs.existsSync(dir);
+  fs.mkdirSync(dir, { recursive: true });
+  return { path: dir, existed, created: !existed, exists: fs.existsSync(dir) };
 }
 
 function ensureUniqueTarget(targetPath, currentPath) {
@@ -218,6 +225,21 @@ async function runPanel50Batch(config, appRoot, payload = {}, actor = null, onPr
     });
   }
 
+  if (uploadAfter) {
+    onProgress({
+      phase: "Teste Drive",
+      current: 0,
+      total: job.items.length,
+      detail: "Confirmando se o Drive aceita upload antes de renomear.",
+    });
+    job.drivePreflight = await googleService.assertDriveUploadReady(config, appRoot, {
+      product: PRODUCT,
+      size: SIZE,
+      theme,
+    });
+    writeJson(stateFile, { ...job, updatedAt: new Date().toISOString() });
+  }
+
   onProgress({ phase: "Renomeando bases", current: 0, total: job.items.length, detail: "Aplicando ID nos arquivos originais." });
   for (const [index, item] of job.items.entries()) {
     const currentPath = fs.existsSync(item.sourcePath)
@@ -231,15 +253,22 @@ async function runPanel50Batch(config, appRoot, payload = {}, actor = null, onPr
       continue;
     }
     const extension = path.extname(currentPath);
-    const baseIdFolder = ensureDir(path.join(organizedRoot, themeFolderName, String(item.id)));
-    const mockupIdFolder = ensureDir(path.join(driveLocalRoot, themeFolderName, String(item.id)));
+    const originalInputPath = item.originalInputPath || currentPath;
+    const organizedThemeFolder = ensureDirWithStatus(path.join(organizedRoot, themeFolderName));
+    const driveThemeFolder = ensureDirWithStatus(path.join(driveLocalRoot, themeFolderName));
+    const baseIdFolderInfo = ensureDirWithStatus(path.join(organizedThemeFolder.path, String(item.id)));
+    const mockupIdFolderInfo = ensureDirWithStatus(path.join(driveThemeFolder.path, String(item.id)));
+    const baseIdFolder = baseIdFolderInfo.path;
+    const mockupIdFolder = mockupIdFolderInfo.path;
     const targetPath = path.join(baseIdFolder, managedArtworkName(item.id, theme, extension));
     ensureUniqueTarget(targetPath, currentPath);
     if (path.resolve(currentPath).toLowerCase() !== path.resolve(targetPath).toLowerCase()) {
       fs.renameSync(currentPath, targetPath);
     }
+    item.originalInputPath = originalInputPath;
     item.sourcePath = targetPath;
     item.sourceName = path.basename(targetPath);
+    item.expectedSourcePath = targetPath;
     const previousOutputPath = item.outputPath;
     const nextOutputPath = path.join(mockupIdFolder, managedArtworkName(item.id, theme, ".jpg"));
     if (previousOutputPath && fs.existsSync(previousOutputPath) && previousOutputPath.toLowerCase() !== nextOutputPath.toLowerCase()) {
@@ -247,6 +276,13 @@ async function runPanel50Batch(config, appRoot, payload = {}, actor = null, onPr
       fs.renameSync(previousOutputPath, nextOutputPath);
     }
     item.outputPath = nextOutputPath;
+    item.expectedOutputPath = nextOutputPath;
+    item.folderAudit = {
+      organizedTheme: organizedThemeFolder,
+      organizedId: baseIdFolderInfo,
+      driveTheme: driveThemeFolder,
+      driveId: mockupIdFolderInfo,
+    };
     item.error = "";
     onProgress({ phase: "Renomeando bases", current: index + 1, total: job.items.length, detail: item.sourceName });
   }
@@ -370,9 +406,15 @@ async function runPanel50Batch(config, appRoot, payload = {}, actor = null, onPr
           ? (lock) => supabaseCoordinationService.releaseOperationLock(uploadConfig, lock?.id)
           : null,
       });
-      const uploaded = new Set(result.successes.map((row) => String(row.id)));
+      const uploaded = new Map(result.successes.map((row) => [String(row.id), row]));
       for (const item of job.items) {
-        if (uploaded.has(String(item.id))) item.status = "upload_ok";
+        const success = uploaded.get(String(item.id));
+        if (success) {
+          item.status = "upload_ok";
+          item.driveFileId = success.driveFileId || "";
+          item.driveUrl = success.url || "";
+          item.platformUpload = { supabase: "created", drive: "created" };
+        }
       }
       if (result.failures.length) {
         for (const failure of result.failures) {
@@ -387,9 +429,17 @@ async function runPanel50Batch(config, appRoot, payload = {}, actor = null, onPr
   }
 
   job.updatedAt = new Date().toISOString();
-  removeFolderIfEmpty(inputFolder);
+  const verification = await buildFinalVerification(job, config, appRoot, { inputFolder, organizedRoot, driveLocalRoot, theme, themeFolderName, uploadAfter });
+  verification.cleanup = cleanupInputFolder(inputFolder, verification);
+  job.verification = verification;
   writeJson(stateFile, job);
-  onProgress({ phase: "Concluido", current: job.items.filter((item) => item.status === "upload_ok").length, total: job.items.length, detail: "Automacao finalizada." });
+  onProgress({
+    phase: verification.ok ? "Conferencia aprovada" : "Conferencia com pendencias",
+    current: verification.totals.ok,
+    total: job.items.length,
+    detail: verification.ok ? "Origem, organizados, mockups, Drive e Supabase validados." : `${verification.totals.failed} item(ns) precisam de revisao.`,
+    error: !verification.ok,
+  });
   return summarizeJob(job);
 }
 
@@ -454,6 +504,188 @@ function summarizeJob(job) {
     return acc;
   }, {});
   return { ...job, counts };
+}
+
+function isInside(parent, child) {
+  const relative = path.relative(path.resolve(parent), path.resolve(child));
+  return relative === "" || (relative && !relative.startsWith("..") && !path.isAbsolute(relative));
+}
+
+function fileCheck(filePath, minBytes = 1) {
+  const exists = Boolean(filePath && fs.existsSync(filePath));
+  const sizeBytes = exists ? fileSize(filePath) : 0;
+  return { exists, sizeBytes, ok: exists && sizeBytes >= minBytes };
+}
+
+function folderCheck(folderPath) {
+  return { path: folderPath, exists: Boolean(folderPath && fs.existsSync(folderPath)) };
+}
+
+function managedNameMatches(filePath, item, theme) {
+  const parsed = parseManagedName(filePath);
+  return Boolean(parsed
+    && parsed.id === String(item.id)
+    && parsed.theme === normalizeTheme(theme)
+    && parsed.product === PRODUCT
+    && parsed.size === SIZE);
+}
+
+async function buildFinalVerification(job, config, appRoot, context) {
+  const itemIds = new Set(job.items.map((item) => String(item.id)));
+  const supabaseRows = new Map();
+  let supabaseError = "";
+  if (context.uploadAfter && supabaseArtworkService.canRead(config)) {
+    try {
+      for (const row of await supabaseArtworkService.listArtworks(config)) {
+        if (itemIds.has(String(row.id))) supabaseRows.set(String(row.id), row);
+      }
+    } catch (error) {
+      supabaseError = error.message;
+    }
+  }
+
+  const driveResults = new Map();
+  let driveError = "";
+  if (context.uploadAfter) {
+    const refs = job.items.map((item) => {
+      const supabaseRow = supabaseRows.get(String(item.id));
+      return {
+        id: item.id,
+        driveFileId: item.driveFileId,
+        url: item.driveUrl || supabaseRow?.url || "",
+      };
+    });
+    try {
+      for (const result of await googleService.verifyDriveFiles(config, appRoot, refs)) {
+        driveResults.set(String(result.id), result);
+      }
+    } catch (error) {
+      driveError = error.message;
+    }
+  }
+
+  const items = job.items.map((item) => verifyItem(item, context, supabaseRows, supabaseError, driveResults, driveError));
+  const totals = items.reduce((acc, item) => {
+    acc.total += 1;
+    if (item.ok) acc.ok += 1;
+    else acc.failed += 1;
+    return acc;
+  }, { total: 0, ok: 0, failed: 0 });
+  const ok = totals.total > 0 && totals.failed === 0;
+  return {
+    ok,
+    generatedAt: new Date().toISOString(),
+    inputFolder: context.inputFolder,
+    organizedRoot: context.organizedRoot,
+    driveLocalRoot: context.driveLocalRoot,
+    theme: context.theme,
+    uploadAfter: Boolean(context.uploadAfter),
+    totals,
+    items,
+  };
+}
+
+function verifyItem(item, context, supabaseRows, supabaseError, driveResults, driveError) {
+  const id = String(item.id);
+  const errors = [];
+  const source = fileCheck(item.sourcePath);
+  const mockup = fileCheck(item.outputPath, MIN_MOCKUP_BYTES);
+  const expectedOrganizedIdFolder = path.join(context.organizedRoot, context.themeFolderName, id);
+  const expectedDriveIdFolder = path.join(context.driveLocalRoot, context.themeFolderName, id);
+  const sourceInputPath = item.originalInputPath || "";
+  const sourceRemovedFromInput = !sourceInputPath
+    || path.resolve(sourceInputPath).toLowerCase() === path.resolve(item.sourcePath || "").toLowerCase()
+    || !fs.existsSync(sourceInputPath);
+  const sourceInOrganized = source.ok && isInside(expectedOrganizedIdFolder, item.sourcePath);
+  const sourceNameOk = source.ok && managedNameMatches(item.sourcePath, item, context.theme);
+  const mockupInDriveLocal = mockup.ok && isInside(expectedDriveIdFolder, item.outputPath);
+  const mockupNameOk = mockup.ok && managedNameMatches(item.outputPath, item, context.theme);
+  const folders = {
+    organizedTheme: { ...(item.folderAudit?.organizedTheme || folderCheck(path.join(context.organizedRoot, context.themeFolderName))), exists: fs.existsSync(path.join(context.organizedRoot, context.themeFolderName)) },
+    organizedId: { ...(item.folderAudit?.organizedId || folderCheck(expectedOrganizedIdFolder)), exists: fs.existsSync(expectedOrganizedIdFolder) },
+    driveTheme: { ...(item.folderAudit?.driveTheme || folderCheck(path.join(context.driveLocalRoot, context.themeFolderName))), exists: fs.existsSync(path.join(context.driveLocalRoot, context.themeFolderName)) },
+    driveId: { ...(item.folderAudit?.driveId || folderCheck(expectedDriveIdFolder)), exists: fs.existsSync(expectedDriveIdFolder) },
+  };
+
+  if (!source.ok) errors.push("Arte organizada nao encontrada.");
+  if (!sourceRemovedFromInput) errors.push("Arte ainda existe na pasta de origem.");
+  if (!sourceInOrganized) errors.push("Arte nao esta na subpasta correta em Temas Organizados.");
+  if (!sourceNameOk) errors.push("Nome final da arte organizada nao bate com ID, tema, produto e tamanho.");
+  if (!folders.organizedId.exists) errors.push("Subpasta de ID em Temas Organizados nao existe.");
+  if (!folders.driveId.exists) errors.push("Subpasta de ID no Drive local nao existe.");
+  if (!mockup.ok) errors.push("Mockup JPG nao encontrado ou muito pequeno.");
+  if (!mockupInDriveLocal) errors.push("Mockup nao esta na subpasta correta do Drive local.");
+  if (!mockupNameOk) errors.push("Nome do mockup nao bate com ID, tema, produto e tamanho.");
+
+  const supabaseRow = supabaseRows.get(id);
+  const supabase = context.uploadAfter
+    ? {
+      required: true,
+      ok: Boolean(supabaseRow),
+      status: supabaseRow ? "confirmed" : "missing",
+      url: supabaseRow?.url || "",
+      error: supabaseError,
+    }
+    : { required: false, ok: true, status: "not_requested" };
+  if (context.uploadAfter && !supabase.ok) errors.push(supabaseError || "Registro no Supabase nao confirmado.");
+
+  const driveResult = driveResults.get(id);
+  const drivePlatform = context.uploadAfter
+    ? {
+      required: true,
+      ok: Boolean(driveResult?.ok),
+      status: driveResult?.status || "missing",
+      driveFileId: driveResult?.driveFileId || item.driveFileId || "",
+      url: driveResult?.url || item.driveUrl || supabaseRow?.url || "",
+      error: driveResult?.error || driveError,
+    }
+    : { required: false, ok: true, status: "not_requested" };
+  if (context.uploadAfter && !drivePlatform.ok) errors.push(drivePlatform.error || "Arquivo na plataforma Drive nao confirmado.");
+
+  return {
+    id,
+    originalName: item.originalName || item.sourceName || "",
+    ok: errors.length === 0,
+    status: item.status,
+    errors,
+    source: {
+      inputPath: sourceInputPath,
+      path: item.sourcePath,
+      expectedFolder: expectedOrganizedIdFolder,
+      exists: source.exists,
+      sizeBytes: source.sizeBytes,
+      removedFromInput: sourceRemovedFromInput,
+      inOrganizedFolder: sourceInOrganized,
+      nameMatches: sourceNameOk,
+    },
+    folders,
+    mockup: {
+      path: item.outputPath,
+      expectedFolder: expectedDriveIdFolder,
+      exists: mockup.exists,
+      sizeBytes: mockup.sizeBytes,
+      inDriveLocalFolder: mockupInDriveLocal,
+      nameMatches: mockupNameOk,
+    },
+    platform: {
+      supabase,
+      drive: drivePlatform,
+    },
+  };
+}
+
+function cleanupInputFolder(inputFolder, verification) {
+  if (!verification.ok) {
+    return { removed: false, reason: "Pasta preservada: conferencia final tem pendencias." };
+  }
+  if (!fs.existsSync(inputFolder)) return { removed: false, reason: "Pasta de origem ja nao existe." };
+  if (!isFolderEmpty(inputFolder)) {
+    return { removed: false, reason: "Pasta preservada: ainda existem arquivos ou subpastas na origem." };
+  }
+  const removed = removeFolderIfEmpty(inputFolder);
+  return removed
+    ? { removed: true, reason: "Pasta de origem removida somente apos conferencia completa." }
+    : { removed: false, reason: "Pasta preservada: nao estava vazia." };
 }
 
 function runPhotoshopJsx(jsxFile, statusFile, total, onProgress) {

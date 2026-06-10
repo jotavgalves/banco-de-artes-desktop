@@ -98,6 +98,7 @@ async function listProfiles(config = {}) {
   const { data, error } = await supabase
     .from("profiles")
     .select("id,auth_user_id,login,technical_email,display_name,role,active,must_change_password")
+    .is("deleted_at", null)
     .order("display_name", { ascending: true });
   if (error) throw new Error(error.message);
   return (data || []).map(publicProfile);

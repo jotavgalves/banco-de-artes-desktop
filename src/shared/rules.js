@@ -25,23 +25,44 @@ function sizeOptionsForProduct(product, config = {}) {
   return map[normalized] || [];
 }
 
-function parseArtworkFilename(filename, validProducts) {
+function validateSize(product, size, config = {}) {
+  const normSize = normalizeDimension(size);
+  const normalizedProduct = normalizeText(product);
+  
+  // Exceção: PAINEL REDONDO aceita qualquer tamanho duplo (ex: 50X50, 100X100, 150X150)
+  if (normalizedProduct === "PAINEL REDONDO") {
+    const match = normSize.match(/^(\d+)X(\d+)$/);
+    if (match && match[1] === match[2]) {
+      return normSize; // Válido
+    }
+  }
+
+  const allowedSizes = sizeOptionsForProduct(product, config);
+  if (allowedSizes.length > 0 && !allowedSizes.includes(normSize)) {
+    throw new Error(`Medida '${normSize}' não permitida para o produto '${product}'. Permitidas: ${allowedSizes.join(", ")}`);
+  }
+  return normSize;
+}
+
+function parseArtworkFilename(filename, config) {
+  const validProducts = config?.validProducts || [];
   const stem = filename.replace(/\.[^.]+$/, "").trim();
   const parts = stem.split("_").map((part) => part.trim()).filter(Boolean);
   if (parts.length !== 4) {
     throw new Error("Nome inválido. Use: ID_TEMA_PRODUTO_DIMENSAO.jpg");
   }
 
-  const [id, theme, product, dimension] = parts;
+  const [id, theme, productStr, dimension] = parts;
   if (!/^\d+$/.test(id)) {
     throw new Error("ID inválido. O primeiro campo deve ser numérico.");
   }
 
+  const product = validateProduct(productStr, validProducts);
   return {
     id,
     theme: normalizeText(theme),
-    product: validateProduct(product, validProducts),
-    size: normalizeDimension(dimension),
+    product,
+    size: validateSize(product, dimension, config),
   };
 }
 
@@ -55,17 +76,19 @@ function buildArtworkFilename({ id, theme, product, size, extension = ".jpg" }) 
   ].join("_") + cleanExtension.toLowerCase();
 }
 
-function validateBatchRows(rows, validProducts) {
+function validateBatchRows(rows, config) {
+  const validProducts = config?.validProducts || [];
   const seenIds = new Map();
   return rows.map((row, index) => {
     const errors = [];
     let parsed = null;
     try {
+      const product = validateProduct(row.product, validProducts);
       parsed = {
         id: String(row.id || "").trim(),
         theme: normalizeText(row.theme),
-        product: validateProduct(row.product, validProducts),
-        size: normalizeDimension(row.size),
+        product,
+        size: validateSize(product, row.size, config),
         client: normalizeText(row.client),
         phone: String(row.phone || "").trim(),
       };

@@ -73,7 +73,7 @@ async function runOfficialSync(config, cache) {
     artworksMap = {};
     for (const row of artworks) {
       const id = String(row.id || "").trim();
-      if (id) artworksMap[id] = true;
+      if (id) artworksMap[id] = row.theme || true;
     }
   }
 

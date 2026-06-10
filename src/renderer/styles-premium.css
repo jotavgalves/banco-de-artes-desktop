@@ -1993,6 +1993,13 @@ body::before,
   background: #fafafa !important;
 }
 
+.user-tabs {
+  margin: 16px 0 12px !important;
+  justify-content: space-between !important;
+  gap: 2px !important;
+  width: 100% !important;
+}
+
 .segmented button,
 .user-tabs button {
   min-height: 28px !important;
@@ -2000,6 +2007,11 @@ body::before,
   border-radius: 6px !important;
   color: #3f3f46 !important;
   font-size: 12px !important;
+  flex: 1 1 0 !important;
+  text-align: center !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
 }
 
 .segmented button.active,

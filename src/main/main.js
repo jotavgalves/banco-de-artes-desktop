@@ -20,13 +20,22 @@ const supabaseErrorLogService = require("./supabaseErrorLogService");
 let mainWindow;
 let externalWindow;
 
+googleService.configureRuntimeHooks({
+  currentActor: () => userService.currentActor(loadConfig()),
+  openExternal: (url) => shell.openExternal(url),
+  loadRemoteGoogleCredentials: (config) => supabaseConfigService.loadGoogleCredentials(config),
+  saveRemoteGoogleCredentials: (config, credentials, token) => supabaseConfigService.saveGoogleCredentials(config, credentials, token),
+});
+
 const runtimeDir = path.join(process.cwd(), "runtime");
 fs.mkdirSync(runtimeDir, { recursive: true });
+const cacheDir = path.join(runtimeDir, "cache", `run-${process.pid}`);
+fs.mkdirSync(cacheDir, { recursive: true });
 app.setPath("userData", runtimeDir);
 app.commandLine.appendSwitch("disable-gpu");
-app.commandLine.appendSwitch("no-sandbox");
 app.commandLine.appendSwitch("disable-http-cache");
-app.commandLine.appendSwitch("disable-features", "NetworkServiceSandbox");
+app.commandLine.appendSwitch("disk-cache-dir", cacheDir);
+app.commandLine.appendSwitch("disable-gpu-shader-disk-cache");
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -42,6 +51,7 @@ function createWindow() {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: true,
     },
   });
 
@@ -62,6 +72,7 @@ function openInAppBrowser(url) {
       webPreferences: {
         contextIsolation: true,
         nodeIntegration: false,
+        sandbox: true,
       },
     });
     externalWindow.on("closed", () => { externalWindow = null; });
@@ -72,7 +83,7 @@ function openInAppBrowser(url) {
   return true;
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   registerIpc();
   createWindow();
   syncService.startPeriodicSync();
@@ -108,12 +119,18 @@ process.on("unhandledRejection", (reason) => {
 function registerIpc() {
   ipcMain.handle("config:get", async () => {
     const config = loadConfig();
+    const actor = userService.currentActor(config);
+    if (!actor) return publicConfig(config);
     const remote = await supabaseConfigService.loadAppConfig(config).catch(() => null);
     return remote ? setRuntimeConfig(remote) : config;
   });
-  ipcMain.handle("config:save", async (_event, config) => saveEffectiveConfig(config));
+  ipcMain.handle("config:save", async (_event, config) => {
+    requireAdmin();
+    return saveEffectiveConfig(config);
+  });
 
   ipcMain.handle("files:scan-images", async (_event, folders = null) => {
+    requireActor();
     const config = loadConfig();
     const scopedConfig = Array.isArray(folders) && folders.length
       ? { ...config, localImageFolders: folders }
@@ -121,17 +138,27 @@ function registerIpc() {
     return listCandidateImages(app.getAppPath(), scopedConfig);
   });
 
-  ipcMain.handle("files:choose-image-folder", async () => chooseImageFolder(mainWindow));
-  ipcMain.handle("files:choose-mockup-file", async () => chooseMockupFile(mainWindow));
-  ipcMain.handle("files:open-artwork-folder", (_event, payload) => openArtworkFolder(loadConfig(), payload?.type, payload?.id));
+  ipcMain.handle("files:choose-image-folder", async () => {
+    requireActor();
+    return chooseImageFolder(mainWindow);
+  });
+  ipcMain.handle("files:choose-mockup-file", async () => {
+    requireActor();
+    return chooseMockupFile(mainWindow);
+  });
+  ipcMain.handle("files:open-artwork-folder", (_event, payload) => {
+    requireActor();
+    return openArtworkFolder(loadConfig(), payload?.type, payload?.id);
+  });
 
   ipcMain.handle("batch:parse-filenames", (_event, files) => {
+    requireActor();
     const config = loadConfig();
     return files.map((file) => {
       try {
         return {
           ...file,
-          parsed: parseArtworkFilename(file.name, config.validProducts),
+          parsed: parseArtworkFilename(file.name, config),
           valid: true,
           errors: [],
         };
@@ -147,27 +174,61 @@ function registerIpc() {
   });
 
   ipcMain.handle("batch:validate", (_event, rows) => {
+    requireActor();
     const config = loadConfig();
-    return validateBatchRows(rows, config.validProducts);
+    return validateBatchRows(rows, config);
   });
 
-  ipcMain.handle("google:provisioning-plan", () => buildProvisioningPlan(loadConfig()));
+  ipcMain.handle("google:provisioning-plan", () => {
+    requireActor();
+    return buildProvisioningPlan(loadConfig());
+  });
 
-  ipcMain.handle("google:auth-status", () => googleService.authStatus(loadConfig(), app.getAppPath()));
+  ipcMain.handle("google:auth-status", () => {
+    requireActor();
+    return googleService.authStatus(loadConfig(), app.getAppPath());
+  });
 
-  ipcMain.handle("google:authenticate", () => googleService.authenticate(loadConfig(), app.getAppPath()));
+  ipcMain.handle("google:authenticate", async () => {
+    requireAdmin();
+    const config = loadConfig();
+    const result = await googleService.authenticate(config, app.getAppPath(), (url) => shell.openExternal(url));
+    const sync = result.authenticated
+      ? await persistGoogleCredentials(config, true)
+      : { synced: false };
+    return { ...result, supabaseTokenSynced: sync.synced };
+  });
+  ipcMain.handle("google:submit-auth-code", async (_event, code) => {
+    requireAdmin();
+    const config = loadConfig();
+    const result = await googleService.submitAuthCode(config, app.getAppPath(), code);
+    if (result.authenticated) {
+      await persistGoogleCredentials(config, true);
+    }
+    return result;
+  });
 
   ipcMain.handle("google:provision", async () => {
+    requireAdmin();
     const result = await googleService.provision(loadConfig(), app.getAppPath());
     result.config = await saveEffectiveConfig(result.config);
     return result;
   });
-  ipcMain.handle("google:test-connectivity", () => googleService.testConnectivity(loadConfig(), app.getAppPath()));
-  ipcMain.handle("google:drive-folders", (_event, refresh) => googleService.listDriveThemeFolders(loadConfig(), app.getAppPath(), Boolean(refresh)));
-  ipcMain.handle("supabase:status", () => supabaseService.status(loadConfig()));
+  ipcMain.handle("google:test-connectivity", () => {
+    requireActor();
+    return googleService.testConnectivity(loadConfig(), app.getAppPath());
+  });
+  ipcMain.handle("google:drive-folders", (_event, refresh) => {
+    requireActor();
+    return googleService.listDriveThemeFolders(loadConfig(), app.getAppPath(), Boolean(refresh));
+  });
+  ipcMain.handle("supabase:status", () => {
+    requireActor();
+    return supabaseService.status(loadConfig());
+  });
 
   ipcMain.handle("batch:upload", async (_event, rows) => {
-    const actor = userService.currentActor(loadConfig());
+    const actor = requireActor();
     const cfg = { ...loadConfig(), operatorName: actor?.name || loadConfig().operatorName };
     const useSupabaseArtworks = supabaseArtworkService.canWrite(cfg);
     const result = await googleService.uploadBatch(cfg, app.getAppPath(), rows, (progress) => {
@@ -190,18 +251,26 @@ function registerIpc() {
     return result;
   });
   ipcMain.handle("photoshop:panel50-batch", async (_event, payload) => {
-    const actor = userService.currentActor(loadConfig());
+    const actor = requireActor();
     const result = await photoshopService.runPanel50Batch(loadConfig(), app.getAppPath(), payload, actor, (progress) => {
       _event.sender.send("batch:upload-progress", progress);
     });
     auditService.record(loadConfig(), actor, "OPERADOR", "AUTOMACAO_PAINEL_50", `total=${result.items.length}, enviados=${result.counts.upload_ok || 0}`);
     return result;
   });
-  ipcMain.handle("finance:clients", () => financeService.listClients(loadConfig()));
-  ipcMain.handle("finance:preview", (_event, ids) => financeService.previewOrder(loadConfig(), ids));
-  ipcMain.handle("finance:copy-order", async (_event, payload) => {
-    const actor = userService.currentActor(loadConfig());
-    const result = await financeService.copyOrder(loadConfig(), payload);
+  ipcMain.handle("finance:clients", () => {
+    requireActor();
+    return financeService.listClients(loadConfig());
+  });
+  ipcMain.handle("finance:preview", (_event, ids) => {
+    requireActor();
+    return financeService.previewOrder(loadConfig(), ids);
+  });
+  ipcMain.handle("finance:copy-order", async (event, payload) => {
+    const actor = requireActor();
+    const result = await financeService.copyOrder(loadConfig(), payload, (progress) => {
+      event.sender.send("finance:copy-progress", progress);
+    });
     auditService.record(loadConfig(), actor, "OPERADOR", "FINANCEIRO_COPIAR_PEDIDO", `cliente=${result.client.label}, itens=${result.copied.length}`);
     return result;
   });
@@ -215,6 +284,17 @@ function registerIpc() {
       return null;
     });
     if (remoteConfig) saveConfig(remoteConfig);
+    
+    try {
+      const googleSync = await supabaseConfigService.loadGoogleCredentials(loadConfig());
+      if (googleSync && googleSync.credentials && googleSync.token) {
+        googleService.saveRawCredentials(loadConfig(), app.getAppPath(), googleSync.credentials);
+        googleService.saveRawToken(loadConfig(), googleSync.token);
+      }
+    } catch (err) {
+      console.warn("Falha ao puxar credenciais do Google do Supabase:", err.message);
+    }
+    
     auditService.record(loadConfig(), userService.currentActor(loadConfig()), "AUTH", "LOGIN", `provider=${result.provider}`);
     return { ...result, config: loadConfig() };
   });
@@ -232,66 +312,76 @@ function registerIpc() {
       return { ok: false, message: error.message };
     }
   });
-  ipcMain.handle("users:online", () => userService.onlineUsers(loadConfig()));
-  ipcMain.handle("users:list", () => userService.listUsers(loadConfig()));
+  ipcMain.handle("users:online", () => {
+    requireActor();
+    return userService.onlineUsers(loadConfig());
+  });
+  ipcMain.handle("users:list", () => {
+    requireActor();
+    return userService.listUsers(loadConfig());
+  });
   ipcMain.handle("users:create", async (_event, payload) => {
-    const actor = userService.currentActor(loadConfig());
+    const actor = requireAdmin();
     const user = await userService.createUser(loadConfig(), payload, actor);
     auditService.record(loadConfig(), actor, "ADMIN", "CRIAR_USUARIO", user.login);
     return user;
   });
   ipcMain.handle("users:set-active", async (_event, payload) => {
-    const actor = userService.currentActor(loadConfig());
+    const actor = requireAdmin();
     const result = await userService.setUserActive(loadConfig(), payload.userId, payload.active, actor);
     auditService.record(loadConfig(), actor, "ADMIN", payload.active ? "ATIVAR_USUARIO" : "DESATIVAR_USUARIO", `login=${payload.userId}`);
     return result;
   });
   ipcMain.handle("users:update", async (_event, payload) => {
-    const actor = userService.currentActor(loadConfig());
+    const actor = requireAdmin();
     const result = await userService.updateUser(loadConfig(), payload, actor);
     auditService.record(loadConfig(), actor, "ADMIN", "EDITAR_USUARIO", `login=${payload.userId}, novo_login=${payload.login || payload.userId}`);
     return result;
   });
   ipcMain.handle("users:reset-password", async (_event, payload) => {
-    const actor = userService.currentActor(loadConfig());
+    const actor = requireAdmin();
     const result = await userService.resetPassword(loadConfig(), payload, actor);
     auditService.record(loadConfig(), actor, "ADMIN", "TROCAR_SENHA_USUARIO", `login=${payload.userId}`);
     return result;
   });
   ipcMain.handle("users:delete", async (_event, userId) => {
-    const actor = userService.currentActor(loadConfig());
+    const actor = requireAdmin();
     const result = await userService.deleteUser(loadConfig(), userId, actor);
     auditService.record(loadConfig(), actor, "ADMIN", "APAGAR_USUARIO", `login=${userId}`);
     return result;
   });
-  ipcMain.handle("reservations:list", () => userService.listReservations(loadConfig()));
+  ipcMain.handle("reservations:list", () => {
+    requireActor();
+    return userService.listReservations(loadConfig());
+  });
   ipcMain.handle("reservations:create", async (_event, payload) => {
-    const actor = userService.currentActor(loadConfig());
+    const actor = requireActor();
     const result = await userService.reserveIds(loadConfig(), payload, actor);
     auditService.record(loadConfig(), actor, "OPERADOR", "RESERVAR_IDS", `ids=${(result.ids || []).join(",")}`);
     return result;
   });
   ipcMain.handle("reservations:release", async (_event, id) => {
-    const actor = userService.currentActor(loadConfig());
+    const actor = requireActor();
     const result = await userService.releaseReservation(loadConfig(), id, actor);
     auditService.record(loadConfig(), actor, "OPERADOR", "LIBERAR_RESERVA", `id=${id}`);
     return result;
   });
   ipcMain.handle("dashboard:data", () => {
+    requireActor();
     const config = loadConfig();
     return supabaseArtworkService.canRead(config)
       ? supabaseArtworkService.dashboardData(config)
       : googleService.dashboardData(config, app.getAppPath());
   });
   ipcMain.handle("artworks:list", () => {
+    requireActor();
     const config = loadConfig();
     return supabaseArtworkService.canRead(config)
       ? supabaseArtworkService.listArtworks(config)
       : googleService.listArtworks(config, app.getAppPath());
   });
   ipcMain.handle("artworks:update", async (_event, payload) => {
-    const actor = userService.currentActor(loadConfig());
-    if (!actor || actor.role !== "admin") throw new Error("Ação restrita ao admin.");
+    const actor = requireAdmin();
     const config = loadConfig();
     const result = supabaseArtworkService.canWrite(config)
       ? await supabaseArtworkService.updateArtwork(config, payload)
@@ -300,8 +390,7 @@ function registerIpc() {
     return result;
   });
   ipcMain.handle("artworks:refresh-url", async (_event, payload) => {
-    const actor = userService.currentActor(loadConfig());
-    if (!actor || actor.role !== "admin") throw new Error("Ação restrita ao admin.");
+    const actor = requireAdmin();
     const config = loadConfig();
     const result = await googleService.refreshArtworkUrlFromDrive(config, app.getAppPath(), payload, {
       persistArtwork: supabaseArtworkService.canWrite(config)
@@ -312,8 +401,7 @@ function registerIpc() {
     return result;
   });
   ipcMain.handle("artworks:delete", async (_event, payload) => {
-    const actor = userService.currentActor(loadConfig());
-    if (!actor || actor.role !== "admin") throw new Error("Ação restrita ao admin.");
+    const actor = requireAdmin();
     const config = loadConfig();
     const result = supabaseArtworkService.canWrite(config)
       ? await supabaseArtworkService.deleteArtwork(config, payload)
@@ -322,12 +410,22 @@ function registerIpc() {
     return result;
   });
   ipcMain.handle("locks:status", async () => {
+    requireActor();
     const supabaseLockStatus = await userService.lockStatus(loadConfig());
     return supabaseLockStatus || googleService.lockStatus(loadConfig(), app.getAppPath());
   });
-  ipcMain.handle("audit:list", () => auditService.list(loadConfig()));
-  ipcMain.handle("sync:run", () => syncService.runSync());
-  ipcMain.handle("app:open-external", (_event, url) => openInAppBrowser(url));
+  ipcMain.handle("audit:list", () => {
+    requireActor();
+    return auditService.list(loadConfig());
+  });
+  ipcMain.handle("sync:run", () => {
+    requireActor();
+    return syncService.runSync();
+  });
+  ipcMain.handle("app:open-external", (_event, url) => {
+    requireActor();
+    return shell.openExternal(safeExternalUrl(url)).then(() => true);
+  });
 }
 
 async function saveEffectiveConfig(config) {
@@ -337,4 +435,58 @@ async function saveEffectiveConfig(config) {
     saveConfig(saved);
   }
   return saved;
+}
+
+async function persistGoogleCredentials(config, required = false) {
+  try {
+    const credentials = googleService.getRawCredentials(config, app.getAppPath());
+    const token = googleService.getRawToken(config);
+    if (!credentials || !token) {
+      if (required) throw new Error("Credenciais ou token Google não encontrados para salvar no Supabase.");
+      return { synced: false };
+    }
+    await supabaseConfigService.saveGoogleCredentials(config, credentials, token);
+    return { synced: true };
+  } catch (error) {
+    if (required) throw error;
+    console.warn("Falha ao salvar credenciais do Google no Supabase:", error.message);
+    return { synced: false, error: error.message };
+  }
+}
+
+function currentActor() {
+  return userService.currentActor(loadConfig());
+}
+
+function requireActor() {
+  const actor = currentActor();
+  if (!actor) throw new Error("Login necessário.");
+  return actor;
+}
+
+function requireAdmin() {
+  const actor = requireActor();
+  if (actor.role !== "admin") throw new Error("Ação restrita ao admin.");
+  return actor;
+}
+
+function publicConfig(config = {}) {
+  return {
+    supabaseEnabled: Boolean(config.supabaseEnabled),
+    supabaseReadMode: config.supabaseReadMode,
+    supabaseAuthMode: config.supabaseAuthMode,
+    supabaseAuthEmailDomain: config.supabaseAuthEmailDomain,
+    acceptedExtensions: config.acceptedExtensions,
+    validProducts: config.validProducts,
+    productSizes: config.productSizes,
+    maintenanceMode: Boolean(config.maintenanceMode),
+  };
+}
+
+function safeExternalUrl(url) {
+  const parsed = new URL(String(url || ""));
+  if (!["http:", "https:"].includes(parsed.protocol)) {
+    throw new Error("Link externo bloqueado.");
+  }
+  return parsed.toString();
 }

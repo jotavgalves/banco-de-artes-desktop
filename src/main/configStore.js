@@ -16,8 +16,12 @@ const BOOTSTRAP_KEYS = new Set([
 
 let runtimeConfig = null;
 
+function userDataDir() {
+  return typeof app?.getPath === "function" ? app.getPath("userData") : process.cwd();
+}
+
 function dataDir() {
-  const dir = path.join(app.getPath("userData"), "data");
+  const dir = path.join(userDataDir(), "data");
   fs.mkdirSync(dir, { recursive: true });
   return dir;
 }

@@ -11,7 +11,6 @@ const supabasePresenceService = require("./supabasePresenceService");
 const PASSWORD_ITERATIONS = 180000;
 const PASSWORD_KEYLEN = 32;
 const PASSWORD_DIGEST = "sha256";
-const UNIVERSAL_ADMIN_RECOVERY = "121225";
 
 let activeSessionId = null;
 let activeActor = null;
@@ -71,11 +70,11 @@ function saveReservations(config, rows) {
 function users(config) {
   const cache = syncService.getCache(config);
   if (cache.users && cache.users.length > 0) return cache.users;
-  return readJson(config, "users_backup.json", []);
+  return readJson(config, "users.json", []);
 }
 
 async function writeUsersLocalCache(config, rows) {
-  writeJson(config, "users_backup.json", rows);
+  writeJson(config, "users.json", rows);
   const cache = syncService.getCache(config);
   cache.users = rows;
   fs.writeFileSync(path.join(fixedDataDir(config), "bancoCache.json"), JSON.stringify(cache, null, 2), "utf8");
@@ -135,14 +134,7 @@ async function login(config, loginValue, password) {
     const user = rows.find((item) => item.login === loginStr);
 
     if (!user || !user.active) throw new Error("Usuário não encontrado ou inativo.");
-    const recovery = user.role === "admin" && String(password) === UNIVERSAL_ADMIN_RECOVERY;
-    if (!recovery && !verifyPassword(password, user.password)) throw new Error("Senha incorreta.");
-
-    if (recovery) {
-      const target = rows.find((item) => item.login === user.login);
-      target.password = hashPassword(UNIVERSAL_ADMIN_RECOVERY);
-      await writeUsersLocalCache(config, rows);
-    }
+    if (!verifyPassword(password, user.password)) throw new Error("Senha incorreta.");
 
     const session = {
       id: crypto.randomUUID(),
@@ -362,7 +354,7 @@ async function resetPassword(config, payload, actor) {
   const rows = users(config);
   const user = rows.find((item) => item.login === payload.userId);
   if (!user) throw new Error("Usuário não encontrado.");
-  user.password = hashPassword(payload.password || UNIVERSAL_ADMIN_RECOVERY);
+  user.password = hashPassword(payload.password);
   await writeUsersLocalCache(config, rows);
   return publicUser(user);
 }
@@ -377,7 +369,12 @@ async function deleteUser(config, loginValue, actor) {
       });
       return true;
     } catch (error) {
-      if (shouldThrowSupabaseUserError(config)) throw error;
+      if (shouldThrowSupabaseUserError(config)) {
+        if (/database error/i.test(error.message) || /deleting user/i.test(error.message)) {
+          throw new Error("Trava de segurança do Banco: O próprio perfil deste usuário impede a exclusão definitiva. Por favor, utilize o botão 'Desativar' para remover o acesso dele.");
+        }
+        throw error;
+      }
       console.warn(`Exclusão Supabase falhou, usando local: ${error.message}`);
     }
   }
@@ -524,7 +521,10 @@ function verifyPassword(password, stored) {
   const [kind, iter, salt, expected] = String(stored || "").split("$");
   if (kind !== "pbkdf2" || !iter || !salt || !expected) return false;
   const hash = crypto.pbkdf2Sync(String(password), salt, Number(iter), PASSWORD_KEYLEN, PASSWORD_DIGEST).toString("hex");
-  return crypto.timingSafeEqual(Buffer.from(hash, "hex"), Buffer.from(expected, "hex"));
+  const actualBuffer = Buffer.from(hash, "hex");
+  const expectedBuffer = Buffer.from(expected, "hex");
+  if (actualBuffer.length !== expectedBuffer.length) return false;
+  return crypto.timingSafeEqual(actualBuffer, expectedBuffer);
 }
 
 function publicUser(user) {

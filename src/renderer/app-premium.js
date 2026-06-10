@@ -2130,6 +2130,20 @@ function removeFinanceItem(id) {
 }
 window.removeFinanceItem = removeFinanceItem;
 
+window.artBank.onFinanceCopyProgress?.((progress) => {
+  const container = $("#financeProgressContainer");
+  const text = $("#financeProgressText");
+  const percent = $("#financeProgressPercent");
+  const fill = $("#financeProgressFill");
+  if (container && text && percent && fill) {
+    container.classList.remove("hidden");
+    const pct = progress.total > 0 ? Math.round((progress.current / progress.total) * 100) : 0;
+    percent.textContent = `${pct}%`;
+    fill.style.width = `${pct}%`;
+    text.textContent = `Copiando: ${progress.filename || 'arquivo...'}`;
+  }
+});
+
 async function copyFinanceOrder() {
   const ids = selectedFinanceIds();
   if (!ids.length) return toast("Adicione pelo menos uma arte.");
@@ -2137,10 +2151,18 @@ async function copyFinanceOrder() {
   if (!clientQuery) return toast("Escolha ou informe o cliente.");
   const button = $("#financeCopyButton");
   const original = button?.textContent || "Lançar Pedido";
+  const container = $("#financeProgressContainer");
+  const fill = $("#financeProgressFill");
+  const percent = $("#financeProgressPercent");
   try {
     if (button) {
       button.disabled = true;
       button.textContent = "Lançando...";
+    }
+    if (container && fill && percent) {
+      container.classList.remove("hidden");
+      fill.style.width = "0%";
+      percent.textContent = "0%";
     }
     const result = await window.artBank.copyFinanceOrder({
       clientQuery,
@@ -2156,6 +2178,9 @@ async function copyFinanceOrder() {
     if (button) {
       button.disabled = false;
       button.textContent = original;
+    }
+    if (container) {
+      container.classList.add("hidden");
     }
   }
 }

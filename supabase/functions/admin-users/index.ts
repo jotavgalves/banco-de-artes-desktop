@@ -165,6 +165,9 @@ Deno.serve(async (req) => {
 
     if (payload.action === "delete") {
       if (profile.auth_user_id) {
+        const { error: unlinkError } = await adminClient.from("profiles").update({ auth_user_id: null }).eq("id", profile.id);
+        if (unlinkError) throw unlinkError;
+
         const deleted = await adminClient.auth.admin.deleteUser(profile.auth_user_id);
         if (deleted.error) throw deleted.error;
       }

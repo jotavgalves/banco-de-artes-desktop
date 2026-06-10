@@ -3,7 +3,7 @@
 <html data-theme="light" lang="pt-BR">
 <head>
 <meta charset="utf-8"/>
-<meta content="default-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://fonts.gstatic.com; img-src 'self' data: file: https:; connect-src 'self' https:;" http-equiv="Content-Security-Policy"/>
+<meta content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: file: https:; connect-src 'self' https:;" http-equiv="Content-Security-Policy"/>
 <meta content="width=device-width, initial-scale=1, viewport-fit=cover" name="viewport"/>
 <meta content="#fffaf6" name="theme-color"/>
 <title>Banco de Artes Pro</title>
@@ -47,7 +47,7 @@
 <svg style="width:16px;height:16px;fill:currentColor;margin-right:8px" viewBox="0 0 24 24"><path d="M10.09 15.59L11.5 17l5-5-5-5-1.41 1.41L12.67 11H3v2h9.67l-2.58 2.59zM19 3H5c-1.11 0-2 .9-2 2v4h2V5h14v14H5v-4H3v4c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2z"></path></svg>
 <span>Acessar</span>
 </button>
-<button class="ghost-button wide" id="recoverAdminButton" style="margin-top:4px;" type="button">Recuperar Acesso de Admin</button>
+<button class="ghost-button wide" id="recoverAdminButton" style="margin-top:4px;" type="button">Pedir reset de senha</button>
 </form>
 <p class="hint" id="dataFolderHint"></p>
 </div>
@@ -253,6 +253,7 @@
 <div class="progress-track"><span id="panel50ProgressBar"></span></div>
 <small id="panel50Hint">Pronto para renomear, gerar mockup e enviar.</small>
 </div>
+<div class="verification-report hidden" id="panel50VerificationReport"></div>
 </section>
 <div class="batch-layout">
 <section class="panel" style="flex:1;display:flex;flex-direction:column;min-height:0;padding:12px">
@@ -603,9 +604,20 @@
 <div class="order-checklist hidden" id="financeChecklist"></div>
 </section>
 </div>
-<div class="order-modal-footer">
+<div class="order-modal-footer" style="display:flex; align-items:center;">
+<div id="financeProgressContainer" class="hidden" style="flex:1; display:flex; flex-direction:column; gap:4px; margin-right:12px;">
+<div style="display:flex; justify-content:space-between; font-size:11px; color:#52525b; font-weight:600;">
+<span id="financeProgressText">Preparando cópia...</span>
+<span id="financeProgressPercent">0%</span>
+</div>
+<div style="height:6px; background:#e4e4e7; border-radius:3px; overflow:hidden;">
+<div id="financeProgressFill" style="height:100%; width:0%; background:#db2777; transition:width 0.2s;"></div>
+</div>
+</div>
+<div style="margin-left:auto; display:flex; gap:8px;">
 <button class="secondary-button" id="clearOrderButton" type="button">Limpar</button>
 <button class="primary-button" id="financeCopyButton" type="button">Copiar lançamento</button>
+</div>
 </div>
 </div>
 </div>
