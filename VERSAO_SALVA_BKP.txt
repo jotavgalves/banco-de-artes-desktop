@@ -1,0 +1,19 @@
+# Versão Salva do Projeto
+
+Esta é a identificação exata da versão que foi salva antes de prosseguirmos. 
+
+**Hash do Commit:**
+eb49bb26b7544c49ea64bc6c41d94f5af41fa63e
+
+## Como voltar para esta versão no futuro?
+Caso precise descartar alterações futuras e voltar exatamente para este ponto, você pode rodar o seguinte comando no terminal (dentro da pasta do projeto):
+
+```bash
+git checkout eb49bb26b7544c49ea64bc6c41d94f5af41fa63e
+```
+
+Ou, se quiser desfazer permanentemente qualquer coisa que tenha sido feita depois disso:
+
+```bash
+git reset --hard eb49bb26b7544c49ea64bc6c41d94f5af41fa63e
+```

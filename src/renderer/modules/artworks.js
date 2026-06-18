@@ -200,9 +200,9 @@ function renderArtworkTable(artworks) {
       <td>${escapeHtml(art.id)}</td>
       <td>${artCell(art.id, "theme", art.theme)}</td>
       <td>${artCell(art.id, "product", art.product)}</td>
-      <td>${artCell(art.id, "size", art.size)}</td>
-      <td>${artCell(art.id, "client", art.client)}</td>
-      <td>${artCell(art.id, "user", art.user)}</td>
+      <td title="${escapeHtml(art.size || "")}">${artCell(art.id, "size", art.size)}</td>
+      <td title="${escapeHtml(art.client || "")}">${artCell(art.id, "client", art.client)}</td>
+      <td title="${escapeHtml(art.user || "")}">${artCell(art.id, "user", art.user)}</td>
       <td>${artActions(art.id)}</td>
     </tr>
   `).join("");

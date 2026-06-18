@@ -2840,12 +2840,69 @@ body,
 #artworkTableWrap td:nth-child(2) { width: 48px !important; }
 #artworkTableWrap th:nth-child(3),
 #artworkTableWrap td:nth-child(3) { width: 54px !important; }
+#artworkTableWrap th:nth-child(4),
+#artworkTableWrap td:nth-child(4) { width: 140px !important; }
+#artworkTableWrap th:nth-child(5),
+#artworkTableWrap td:nth-child(5) { width: 140px !important; }
 #artworkTableWrap th:nth-child(6),
-#artworkTableWrap td:nth-child(6) { width: 72px !important; }
+#artworkTableWrap td:nth-child(6) { width: 120px !important; }
+#artworkTableWrap th:nth-child(7),
+#artworkTableWrap td:nth-child(7) { width: 140px !important; }
+#artworkTableWrap th:nth-child(8),
+#artworkTableWrap td:nth-child(8) { width: 120px !important; }
 #artworkTableWrap th:nth-child(9),
-#artworkTableWrap td:nth-child(9) { width: 88px !important; }
-#artworkTableWrap th:nth-child(10),
-#artworkTableWrap td:nth-child(10) { width: 138px !important; }
+#artworkTableWrap td:nth-child(9) { width: 140px !important; }
+
+/* 1. Inputs transparentes por padrão */
+#artworkTableWrap .table-input {
+  background: transparent !important;
+  border-color: transparent !important;
+  transition: all 0.2s ease;
+}
+#artworkTableWrap .table-input:hover,
+#artworkTableWrap .table-input:focus {
+  background: var(--surface) !important;
+  border-color: var(--border) !important;
+}
+
+/* 3. Zebrado e hover nas linhas da tabela */
+#artworkTableWrap tbody tr {
+  transition: background-color 0.2s ease;
+  border-bottom: 1px solid var(--border) !important;
+}
+#artworkTableWrap tbody tr:nth-child(even) {
+  background-color: rgba(0, 0, 0, 0.02) !important;
+}
+#artworkTableWrap tbody tr:hover {
+  background-color: #eff6ff !important; /* soft highlight */
+}
+
+/* 4. Altura e padding das linhas reduzidos */
+#artworkTableWrap th,
+#artworkTableWrap td {
+  padding: 4px 8px !important; /* reduced vertical padding */
+}
+
+/* 5. Ações da tabela maiores e espaçadas */
+#artworkTableWrap .artwork-actions {
+  gap: 12px !important;
+}
+#artworkTableWrap .artwork-actions .icon-btn {
+  width: 32px !important;
+  height: 32px !important;
+}
+#artworkTableWrap .artwork-actions .icon-btn svg {
+  width: 18px !important;
+  height: 18px !important;
+}
+
+/* 6. Barra de busca mais larga */
+.search-input-wrapper {
+  min-width: 300px !important;
+}
+#artworkSearch {
+  width: 100% !important;
+}
 
 .automation-panel {
   margin-bottom: 10px !important;
