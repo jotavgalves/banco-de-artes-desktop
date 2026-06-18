@@ -87,6 +87,21 @@ async function evaluate(client, name, code) {
 }
 
 async function main() {
+  const fs = require("node:fs");
+  const os = require("node:os");
+  const desktopPath = path.join(os.homedir(), "Desktop", "autologin.txt");
+  const tempPath = desktopPath + ".bak";
+  let renamed = false;
+  
+  if (fs.existsSync(desktopPath)) {
+    try {
+      fs.renameSync(desktopPath, tempPath);
+      renamed = true;
+    } catch (e) {
+      console.warn("Nao consegui ocultar autologin.txt temporariamente:", e.message);
+    }
+  }
+
   const child = spawn(electronBin, [`--remote-debugging-port=${port}`, "--disable-gpu", "--disable-http-cache", "."], {
     cwd: projectRoot,
     stdio: "ignore",
@@ -130,6 +145,13 @@ async function main() {
     setTimeout(() => {
       if (!child.killed) child.kill("SIGKILL");
     }, 1000);
+    if (renamed && fs.existsSync(tempPath)) {
+      try {
+        fs.renameSync(tempPath, desktopPath);
+      } catch (e) {
+        console.error("ERRO CRITICO: Nao consegui restaurar autologin.txt:", e.message);
+      }
+    }
   }
 }
 

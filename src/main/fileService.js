@@ -2,6 +2,10 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
 const { dialog, nativeImage, shell } = require("electron");
+const {
+  readImagePhysicalSize,
+  validateDimensionsForTarget,
+} = require("./imageMeasurementService");
 
 function resolveFolder(baseDir, folder) {
   if (path.isAbsolute(folder)) return folder;
@@ -11,9 +15,24 @@ function resolveFolder(baseDir, folder) {
 async function thumbnailForFile(fullPath, ext) {
   if (ext !== ".tif" && ext !== ".tiff") return pathToFileURL(fullPath).href;
   try {
-    const image = await nativeImage.createThumbnailFromPath(fullPath, { width: 1200, height: 1200 });
+    const image = await nativeImage.createThumbnailFromPath(fullPath, { width: 256, height: 256 });
     if (!image.isEmpty()) return image.toDataURL();
   } catch {}
+
+  try {
+    const sharp = require('sharp');
+    const buffer = await sharp(fullPath).resize({ width: 120 }).jpeg().toBuffer();
+    return `data:image/jpeg;base64,${buffer.toString('base64')}`;
+  } catch (err) {
+    try {
+      const { Jimp } = require("jimp");
+      const img = await Jimp.read(fullPath);
+      img.resize({ w: 120 });
+      return await img.getBase64("image/jpeg");
+    } catch (jimpErr) {
+      console.error('Erro ao gerar thumb para TIFF', fullPath, jimpErr);
+    }
+  }
 
   const name = path.basename(fullPath).replace(/[&<>"']/g, "");
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160" viewBox="0 0 160 160"><rect width="160" height="160" rx="18" fill="#161619"/><rect x="20" y="20" width="120" height="120" rx="14" fill="#222226" stroke="#3a3a40"/><text x="80" y="72" text-anchor="middle" font-family="Arial,sans-serif" font-size="28" font-weight="700" fill="#f5f5f7">TIFF</text><text x="80" y="96" text-anchor="middle" font-family="Arial,sans-serif" font-size="11" fill="#a1a1a6">arquivo de imagem</text><text x="80" y="118" text-anchor="middle" font-family="Arial,sans-serif" font-size="9" fill="#6e6e73">${name.slice(0, 18)}</text></svg>`;
@@ -26,6 +45,7 @@ async function listCandidateImages(baseDir, config) {
   const files = [];
   const seen = new Set();
 
+  const filePromises = [];
   for (const folder of folders) {
     const fullFolder = resolveFolder(baseDir, folder);
     if (!fs.existsSync(fullFolder)) continue;
@@ -39,19 +59,52 @@ async function listCandidateImages(baseDir, config) {
 
       seen.add(fullPath.toLowerCase());
       const stat = fs.statSync(fullPath);
-      files.push({
-        path: fullPath,
-        name: entry.name,
-        folder: fullFolder,
-        extension: ext,
-        previewUrl: await thumbnailForFile(fullPath, ext),
-        originalUrl: pathToFileURL(fullPath).href,
-        sizeBytes: stat.size,
-      });
+
+      filePromises.push((async () => {
+        const dimensions = await readImagePhysicalSize(fullPath);
+
+        const previewUrl = await thumbnailForFile(fullPath, ext);
+
+        return {
+          path: fullPath,
+          name: entry.name,
+          folder: fullFolder,
+          extension: ext,
+          previewUrl,
+          originalUrl: pathToFileURL(fullPath).href,
+          sizeBytes: stat.size,
+          dimensions,
+        };
+      })());
     }
   }
 
+  const results = await Promise.all(filePromises);
+  files.push(...results);
+
   return files.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function filterCandidateImagesByTarget(files, target) {
+  if (!target) return { files, rejected: [], total: files.length };
+  const accepted = [];
+  const rejected = [];
+  for (const file of files) {
+    const validation = validateDimensionsForTarget(file.dimensions, target);
+    if (validation.valid) {
+      accepted.push(file);
+    } else {
+      rejected.push({
+        name: file.name,
+        path: file.path,
+        reason: validation.reason,
+        actualSize: validation.actualSize,
+        expectedSize: validation.expectedSize,
+        dimensions: file.dimensions,
+      });
+    }
+  }
+  return { files: accepted, rejected, total: files.length };
 }
 
 async function chooseImageFolder(window) {
@@ -126,6 +179,7 @@ async function openArtworkFolder(config, type, id) {
 
 module.exports = {
   listCandidateImages,
+  filterCandidateImagesByTarget,
   chooseImageFolder,
   chooseMockupFile,
   thumbnailForFile,

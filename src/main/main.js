@@ -2,7 +2,13 @@ const path = require("node:path");
 const fs = require("node:fs");
 const { app, BrowserWindow, ipcMain, shell } = require("electron");
 const { loadConfig, saveConfig, setRuntimeConfig } = require("./configStore");
-const { listCandidateImages, chooseImageFolder, chooseMockupFile, openArtworkFolder } = require("./fileService");
+const {
+  listCandidateImages,
+  filterCandidateImagesByTarget,
+  chooseImageFolder,
+  chooseMockupFile,
+  openArtworkFolder,
+} = require("./fileService");
 const { buildProvisioningPlan } = require("./googleBlueprint");
 const googleService = require("./googleService");
 const userService = require("./userService");
@@ -16,6 +22,7 @@ const supabaseArtworkService = require("./supabaseArtworkService");
 const supabaseCoordinationService = require("./supabaseCoordinationService");
 const supabaseConfigService = require("./supabaseConfigService");
 const supabaseErrorLogService = require("./supabaseErrorLogService");
+const financeHistoryService = require("./financeHistoryService");
 
 let mainWindow;
 let externalWindow;
@@ -87,6 +94,7 @@ app.whenReady().then(async () => {
   registerIpc();
   createWindow();
   syncService.startPeriodicSync();
+  financeHistoryService.purgeOldHistory(app.getPath("userData"), 3);
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -129,13 +137,17 @@ function registerIpc() {
     return saveEffectiveConfig(config);
   });
 
-  ipcMain.handle("files:scan-images", async (_event, folders = null) => {
+  ipcMain.handle("files:scan-images", async (_event, request = null) => {
     requireActor();
     const config = loadConfig();
+    const folders = Array.isArray(request) ? request : request?.folders;
+    const target = Array.isArray(request) ? "" : String(request?.target || "");
     const scopedConfig = Array.isArray(folders) && folders.length
       ? { ...config, localImageFolders: folders }
       : config;
-    return listCandidateImages(app.getAppPath(), scopedConfig);
+    const files = await listCandidateImages(app.getAppPath(), scopedConfig);
+    if (!target) return files;
+    return filterCandidateImagesByTarget(files, target);
   });
 
   ipcMain.handle("files:choose-image-folder", async () => {
@@ -149,6 +161,13 @@ function registerIpc() {
   ipcMain.handle("files:open-artwork-folder", (_event, payload) => {
     requireActor();
     return openArtworkFolder(loadConfig(), payload?.type, payload?.id);
+  });
+
+  ipcMain.handle("files:recover-thumb", async (_event, fullPath) => {
+    requireActor();
+    const ext = require("path").extname(fullPath).toLowerCase();
+    const { thumbnailForFile } = require("./fileService");
+    return await thumbnailForFile(fullPath, ext);
   });
 
   ipcMain.handle("batch:parse-filenames", (_event, files) => {
@@ -262,9 +281,23 @@ function registerIpc() {
     requireActor();
     return financeService.listClients(loadConfig());
   });
-  ipcMain.handle("finance:preview", (_event, ids) => {
+  ipcMain.handle("finance:preview", async (_event, ids) => {
     requireActor();
-    return financeService.previewOrder(loadConfig(), ids);
+    console.log("[finance:preview] START ids=", ids);
+    const t0 = Date.now();
+    try {
+      const result = await financeService.previewOrder(loadConfig(), ids);
+      console.log("[finance:preview] DONE in", Date.now() - t0, "ms, results=", result?.length);
+      return result;
+    } catch (err) {
+      console.error("[finance:preview] ERROR in", Date.now() - t0, "ms:", err);
+      throw err;
+    }
+  });
+  
+  ipcMain.handle("finance:measure-dimensions", (_event, folderPath) => {
+    requireActor();
+    return financeService.batchMeasureDimensionsCm(folderPath);
   });
   ipcMain.handle("finance:copy-order", async (event, payload) => {
     const actor = requireActor();
@@ -298,6 +331,35 @@ function registerIpc() {
     auditService.record(loadConfig(), userService.currentActor(loadConfig()), "AUTH", "LOGIN", `provider=${result.provider}`);
     return { ...result, config: loadConfig() };
   });
+
+  ipcMain.handle("auth:current-session", async () => {
+    const actor = userService.currentActor(loadConfig());
+    if (actor) {
+      return { user: actor, session: { id: "local-memory", expiresAt: actor.expiresAt }, provider: actor.provider };
+    }
+    return null;
+  });
+
+  ipcMain.handle("auth:auto-login-desktop", async () => {
+    const os = require("os");
+    const fs = require("fs");
+    const path = require("path");
+    const desktopPath = path.join(os.homedir(), "Desktop", "autologin.txt");
+    if (!fs.existsSync(desktopPath)) return null;
+    try {
+      const content = fs.readFileSync(desktopPath, "utf-8").trim().split(/\r?\n/).map(l => l.trim());
+      if (content.length > 0 && content[0]) {
+        const payload = { login: content[0], password: content[1] || "" };
+        const result = await userService.login(loadConfig(), payload.login, payload.password);
+        auditService.record(loadConfig(), result.user, "AUTH", "AUTO_LOGIN_DESKTOP", `provider=${result.provider}`);
+        return { ...result, config: loadConfig() };
+      }
+    } catch (e) {
+      console.warn("Auto login desktop failed:", e.message);
+    }
+    return null;
+  });
+
   ipcMain.handle("auth:logout", async () => {
     const actor = userService.currentActor(loadConfig());
     auditService.record(loadConfig(), actor, "AUTH", "LOGOUT", "");

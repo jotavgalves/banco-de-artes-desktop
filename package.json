@@ -5,15 +5,19 @@
   "main": "src/main/main.js",
   "scripts": {
     "start": "electron --disable-gpu --disable-http-cache .",
-    "check": "npm run check:structure && npm run security-check && npm run preflight-check",
+    "check": "npm run check:structure && npm run security-check && npm run preflight-check && npm run test:image-target",
     "check:structure": "node scripts/check.js",
     "security-check": "node scripts/security-check.js",
-    "preflight-check": "node scripts/preflight-order-check.js"
+    "preflight-check": "node scripts/preflight-order-check.js",
+    "test:image-target": "node scripts/test-image-target-validation.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.107.0",
     "electron": "^42.4.0",
     "googleapis": "^173.0.0",
+    "image-size": "^2.0.2",
+    "sharp": "^0.35.1",
+    "utif": "^3.1.0",
     "ws": "^8.21.0"
   }
 }

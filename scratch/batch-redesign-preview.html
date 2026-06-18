@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="../src/renderer/styles-premium.css">
+  <title>Prévia do cadastro de artes</title>
+</head>
+<body style="overflow:auto;background:#f7f7f8">
+  <main style="max-width:1180px;margin:0 auto;padding:18px">
+    <section class="view active" id="batchView">
+      <div class="command-bar batch-command-bar">
+        <div class="segmented batch-mode-tabs"><button class="active">Padrão</button><button>Manual</button></div>
+        <div class="batch-secondary-actions">
+          <button class="ghost-button batch-outline-action">Validar lote</button>
+          <button class="ghost-button batch-outline-action">Usar IDs da reserva</button>
+          <button class="ghost-button batch-outline-action">Remover selecionadas</button>
+        </div>
+        <div class="batch-action-status">2 artes aptas para subir, 1 com pendência.</div>
+      </div>
+      <div class="filter-bar batch-filter-bar">
+        <div class="search-input-wrapper"><input placeholder="Buscar por arquivo"></div>
+        <select><option>Todos os estados</option></select>
+        <select><option>Todos os produtos</option></select>
+        <button class="secondary-button">Limpar filtros</button>
+      </div>
+      <section class="panel automation-panel">
+        <div class="panel-header"><div><p class="eyebrow">Automação de produção</p><h2>Renomear, gerar e enviar pasta</h2></div></div>
+        <div class="automation-summary"><span>Tema: RAPUNZEL</span><span>Modelo configurável</span><span>Saídas no sistema</span></div>
+        <div class="automation-grid">
+          <label>Pasta com as artes<input value="X:\ARTES\RAPUNZEL"></label>
+          <label>Produto-alvo<select><option>Bolinha (58x58cm)</option></select></label>
+          <label>Tema ou coleção<input value="RAPUNZEL"></label>
+        </div>
+        <div class="automation-footer">
+          <button class="secondary-button">Escolher pasta</button>
+          <button class="primary-button">Renomear, gerar e enviar</button>
+        </div>
+      </section>
+      <div class="batch-layout">
+        <section class="panel" style="flex:1;display:flex;flex-direction:column;min-height:0;padding:12px">
+          <div class="table-wrap">
+            <table id="batchTable">
+              <thead><tr><th></th><th>Status</th><th>Imagem</th><th>Arquivo</th><th>ID</th><th>Tema</th><th>Produto</th><th>Tamanho</th><th>Cliente</th></tr></thead>
+              <tbody>
+                <tr><td><input type="checkbox" checked></td><td><span class="state-pill ok">Apta</span></td><td><button class="thumb-button">IMG</button></td><td>RAPUNZEL PRINCESA 58X58.tif</td><td>1041</td><td>RAPUNZEL</td><td>PAINEL REDONDO</td><td>50X50</td><td>Marketplace</td></tr>
+                <tr><td><input type="checkbox" checked></td><td><span class="state-pill review">Revisar</span></td><td><button class="thumb-button">IMG</button></td><td>ENROLADOS RAPUNZEL 163X158.tif</td><td>1042</td><td>RAPUNZEL</td><td>PAINEL</td><td>150X150</td><td>Marketplace</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+        <aside class="panel summary-panel">
+          <div class="panel-header"><div><p class="eyebrow">Pré-envio</p><h2>Resumo</h2></div></div>
+          <div class="summary-stack">
+            <div class="summary-metric summary-metric-total"><span>Total</span><strong>3</strong></div>
+            <div class="summary-metric summary-metric-valid"><span>Aptas</span><strong>2</strong></div>
+            <div class="summary-metric summary-metric-review"><span>Rever</span><strong>1</strong></div>
+          </div>
+          <button class="primary-button" style="margin:0 12px 12px">Enviar selecionadas</button>
+        </aside>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

@@ -80,7 +80,30 @@ async function boot() {
   bindFilters();
   await loadConfig();
   await loadBootstrap();
-  renderLoginMode();
+
+  let result = await window.artBank.currentSession();
+  if (!result) result = await window.artBank.autoLoginDesktop();
+
+  if (result && state.bootstrap.hasAdmin) {
+    state.session = result.session;
+    state.user = result.user;
+    
+    $("#loginScreen").classList.add("hidden");
+    $("#appShell").classList.remove("hidden");
+    $("#appShell").classList.remove("locked");
+    const providerLabel = result.provider === "supabase" ? "Supabase" : "Local";
+    $("#sidebarUser").textContent = `${state.user.name} (${state.user.role}) - ${providerLabel}`;
+    
+    if ($("#adminNav")) $("#adminNav").style.display = state.user.role === "admin" ? "grid" : "none";
+
+    startHeartbeat();
+    showView("artworks", "Banco de Artes");
+    refreshArtworks({ force: true });
+    refreshDashboardData();
+  } else {
+    renderLoginMode();
+  }
+
   
   state.cache = await window.artBank.runSync().catch(() => state.cache);
 }
@@ -935,26 +958,43 @@ async function refreshDriveFolders(refresh = false) {
 }
 
 function renderDriveFolders() {
-  const data = state.driveFolders || { folders: [] };
+  const data = state.driveFolders || {};
+  const bolinhas = data.bolinhas || { folders: [] };
+  const geral = data.geral || { folders: [] };
+  
   const query = ($("#driveSearch")?.value || "").toLowerCase().trim();
-  const folders = (data.folders || []).filter((folder) => !query || String(folder.name || "").toLowerCase().includes(query));
+  
+  const bFolders = bolinhas.folders.filter((f) => !query || String(f.name || "").toLowerCase().includes(query));
+  const gFolders = geral.folders.filter((f) => !query || String(f.name || "").toLowerCase().includes(query));
+  
+  const totalShown = bFolders.length + gFolders.length;
+  const totalTotal = bolinhas.folders.length + geral.folders.length;
+
   if ($("#driveSummary")) {
     $("#driveSummary").innerHTML = `
-      <div class="drive-summary-card"><span>Pasta raiz</span><strong title="${escapeHtml(data.rootFolderName || "-")}">${escapeHtml(data.rootFolderName || "-")}</strong></div>
-      <div class="drive-summary-card"><span>Temas</span><strong>${folders.length} / ${(data.folders || []).length}</strong></div>
+      <div class="drive-summary-card"><span>Raízes</span><strong title="Bolinhas e Geral">2 Pastas</strong></div>
+      <div class="drive-summary-card"><span>Temas</span><strong>${totalShown} / ${totalTotal}</strong></div>
       <div class="drive-summary-card"><span>Cache</span><strong>${data.lastSync ? new Date(data.lastSync).toLocaleString("pt-BR") : "Ainda nao sincronizado"}</strong></div>
     `;
   }
   if ($("#driveFolderList")) {
-    $("#driveFolderList").innerHTML = folders.map((folder) => `
-      <article class="drive-card">
-        <div class="drive-card-head">
-          <div class="drive-folder-icon"><svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M10 4l2 2h8c1.1 0 2 .9 2 2v10c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2h6z"/></svg></div>
-          <div><strong title="${escapeHtml(folder.name || "-")}">${escapeHtml(folder.name || "-")}</strong><span>${Number(folder.imageCount || 0)} imagem(ns)</span></div>
-        </div>
-        <button class="secondary-button wide" data-open-drive-folder="${escapeHtml(folder.url)}">Abrir pasta</button>
-      </article>
-    `).join("") || `<div class="diagnostic-item"><strong>Nenhuma pasta de tema encontrada</strong><span>Use Sincronizar pastas para atualizar o cache do Drive.</span></div>`;
+    const renderSection = (title, list) => {
+      if (!list.length) return "";
+      return `<div style="padding: 8px 12px; font-weight: 600; color: var(--text-2); background: var(--bg-1); border-bottom: 1px solid var(--border);">${escapeHtml(title)}</div>` + 
+      list.map((folder) => `
+        <article class="drive-card">
+          <div class="drive-card-head">
+            <div class="drive-folder-icon"><svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M10 4l2 2h8c1.1 0 2 .9 2 2v10c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2h6z"/></svg></div>
+            <div class="drive-card-info"><strong title="${escapeHtml(folder.name || "-")}">${escapeHtml(folder.name || "-")}</strong><span>${Number(folder.imageCount || 0)} imagem(ns)</span></div>
+          </div>
+          <button class="secondary-button wide" data-open-drive-folder="${escapeHtml(folder.url)}">Abrir pasta</button>
+        </article>
+      `).join("");
+    };
+
+    const html = renderSection(bolinhas.rootFolderName || "BOLINHAS", bFolders) + renderSection(geral.rootFolderName || "GERAL", gFolders);
+    
+    $("#driveFolderList").innerHTML = html || `<div class="diagnostic-item"><strong>Nenhuma pasta de tema encontrada</strong><span>Use Sincronizar pastas para atualizar o cache do Drive.</span></div>`;
   }
   $$("[data-open-drive-folder]").forEach((button) => button.addEventListener("click", () => {
     window.artBank.openExternal(button.dataset.openDriveFolder);
@@ -962,9 +1002,12 @@ function renderDriveFolders() {
 }
 
 function openDriveRoot() {
-  const url = state.driveFolders?.rootUrl;
-  if (!url) return toast("Sincronize as pastas primeiro.");
-  window.artBank.openExternal(url);
+  const data = state.driveFolders || {};
+  const urlGeral = data.geral?.rootUrl;
+  const urlBolinhas = data.bolinhas?.rootUrl;
+  if (!urlGeral && !urlBolinhas) return toast("Sincronize as pastas primeiro.");
+  if (urlGeral) window.artBank.openExternal(urlGeral);
+  if (urlBolinhas) window.artBank.openExternal(urlBolinhas);
 }
 
 async function refreshArtworks(options = {}) {
@@ -979,14 +1022,14 @@ async function refreshArtworks(options = {}) {
   }
   updateActionProgress(58, "Carregando artes cadastradas.");
   state.artworks = await window.artBank.listArtworks().catch((error) => {
-    if($("#artworkRows")) $("#artworkRows").innerHTML = `<tr><td colspan="10">${escapeHtml(friendlyError(error.message))}</td></tr>`;
+    if($("#artworkRows")) $("#artworkRows").innerHTML = `<tr><td colspan="9">${escapeHtml(friendlyError(error.message))}</td></tr>`;
     if ($("#artworkCardGrid")) $("#artworkCardGrid").innerHTML = `<div class="empty-state-block">Falha ao carregar: ${escapeHtml(friendlyError(error.message))}</div>`;
     toast(error.message);
     if (showLoading || force) finishActionProgress("Falha ao carregar banco visual.");
     return [];
   });
   if (!state.artworks.length) {
-    if($("#artworkRows")) $("#artworkRows").innerHTML = `<tr><td colspan="10">Nenhuma arte carregada.</td></tr>`;
+    if($("#artworkRows")) $("#artworkRows").innerHTML = `<tr><td colspan="9">Nenhuma arte carregada.</td></tr>`;
     if ($("#artworkCardGrid")) $("#artworkCardGrid").innerHTML = `<div class="empty-state-block">Nenhuma arte carregada.</div>`;
     if (showLoading || force) finishActionProgress("Nenhuma arte carregada.");
     return;
@@ -1035,7 +1078,7 @@ function renderFilteredArtworks() {
   syncArtworkViewMode();
   const mode = currentArtworkViewMode();
   if (!filtered.length) {
-    if($("#artworkRows")) $("#artworkRows").innerHTML = `<tr><td colspan="10" style="text-align:center;padding:20px;color:var(--text-3)">Nenhuma arte corresponde aos filtros.</td></tr>`;
+    if($("#artworkRows")) $("#artworkRows").innerHTML = `<tr><td colspan="9" style="text-align:center;padding:20px;color:var(--text-3)">Nenhuma arte corresponde aos filtros.</td></tr>`;
     if ($("#artworkCardGrid")) $("#artworkCardGrid").innerHTML = `<div class="empty-state-block">Nenhuma arte corresponde aos filtros.</div>`;
     syncArtworkBulkControls();
     return;
@@ -1086,7 +1129,6 @@ function renderArtworkTable(artworks) {
       <td>${artCell(art.id, "size", art.size)}</td>
       <td>${artCell(art.id, "client", art.client)}</td>
       <td>${artCell(art.id, "user", art.user)}</td>
-      <td>${escapeHtml(art.date || "-")}</td>
       <td>${artActions(art.id)}</td>
     </tr>
   `).join("");
@@ -1119,7 +1161,7 @@ function renderArtworkSkeleton() {
   }
   if ($("#artworkRows")) {
     $("#artworkRows").innerHTML = Array.from({ length: 6 }).map(() => `
-      <tr class="skeleton-row"><td colspan="10"><div class="skeleton skeleton-line wide"></div></td></tr>
+      <tr class="skeleton-row"><td colspan="9"><div class="skeleton skeleton-line wide"></div></td></tr>
     `).join("");
   }
   syncArtworkViewMode();
@@ -1137,11 +1179,11 @@ function renderArtworkCards(artworks) {
           <span class="artwork-card-id">#${escapeHtml(art.id || "-")}</span>
         </button>
         <div class="artwork-card-body">
-          <strong title="${escapeHtml(art.theme || "Sem tema")}">${escapeHtml(art.theme || "Sem tema")}</strong>
-          <span>${escapeHtml(art.product || "Sem produto")} · ${escapeHtml(art.size || "Sem tamanho")}</span>
-          <div class="artwork-card-meta">
-            <small>${escapeHtml(art.client || "Sem cliente")}</small>
-            <small>${escapeHtml(art.date || "-")}</small>
+          <strong class="artwork-title" title="${escapeHtml(art.theme || "Sem tema")}">${escapeHtml(art.theme || "Sem tema")}</strong>
+          <span class="artwork-product" title="${escapeHtml(art.product || "Sem produto")}">${escapeHtml(art.product || "Sem produto")}</span>
+          <div class="artwork-meta-footer">
+            <span class="artwork-dimension" title="${escapeHtml(art.size || "Sem tamanho")}">${escapeHtml(art.size || "Sem tamanho")}</span>
+            <small class="artwork-client" title="${escapeHtml(art.client || "Sem cliente")}">${escapeHtml(art.client || "Sem cliente")}</small>
           </div>
         </div>
       </article>
@@ -1598,28 +1640,25 @@ function renderRows() {
   });
 
   if (!filteredIndices.length && state.rows.length) {
-    if($("#batchRows")) $("#batchRows").innerHTML = `<tr><td colspan="11" style="text-align:center;padding:16px;color:var(--text-3)">Nenhuma arte no lote corresponde.</td></tr>`;
+    if($("#batchRows")) $("#batchRows").innerHTML = `<tr><td colspan="8" style="text-align:center;padding:16px;color:var(--text-3)">Nenhuma arte no lote corresponde.</td></tr>`;
   } else if (filteredIndices.length) {
     if($("#batchRows")) {
       $("#batchRows").innerHTML = filteredIndices.map((index) => {
         const row = state.rows[index];
-        return `<tr>
-          <td><input type="checkbox" data-select-row="${index}" ${row.selected ? "checked" : ""} /></td>
-          <td>${status(row)}</td>
-          <td>${batchThumbCell(row, index)}</td>
-          <td title="${escapeHtml(row.path || "")}">${escapeHtml(row.fileName)}</td>
-          <td>${cell(index, "id", row.id, editable, row)}</td>
-          <td>${cell(index, "theme", row.theme, editable, row)}</td>
-          <td>${productCell(index, row.product, editable, products)}</td>
-          <td>${sizeCell(index, row.product, row.size, editable)}</td>
-          <td>${cell(index, "client", row.client || "", editable, row)}</td>
-          <td>${cell(index, "phone", row.phone || "", editable, row)}</td>
-          <td><div class="row-actions"><button class="tiny-button" data-upload-one="${index}">Enviar</button><button class="tiny-button" data-remove-one="${index}">×</button></div></td>
-        </tr>`;
+          return `<tr>
+            <td><input type="checkbox" data-select-row="${index}" ${row.selected ? "checked" : ""} /></td>
+            <td>${batchThumbCell(row, index)}</td>
+            <td title="${escapeHtml(row.path || "")}">${escapeHtml(row.fileName)}</td>
+            <td>${cell(index, "id", row.id, editable, row)}</td>
+            <td>${cell(index, "theme", row.theme, editable, row)}</td>
+            <td>${productCell(index, row.product, editable, products)}</td>
+            <td>${sizeCell(index, row.product, row.size, editable)}</td>
+            <td>${cell(index, "client", row.client || "", editable, row)}</td>
+          </tr>`;
       }).join("");
     }
   } else if ($("#batchRows")) {
-    $("#batchRows").innerHTML = `<tr><td colspan="11" class="batch-empty-cell">Nenhuma imagem carregada. Clique em Validar lote para ler a pasta configurada.</td></tr>`;
+    $("#batchRows").innerHTML = `<tr><td colspan="8" class="batch-empty-cell">Nenhuma imagem carregada. Clique em Validar lote para ler a pasta configurada.</td></tr>`;
   }
   bindBatchInputs();
   renderSummary();
@@ -1628,12 +1667,11 @@ function renderRows() {
 function batchThumbCell(row, index) {
   const src = row.previewUrl || row.originalUrl || localFileUrl(row.path);
   if (!src) {
-    return `<button class="thumb-button thumb-empty" type="button" title="Sem prévia"><span>IMG</span></button>`;
+    return `<button class="thumb-button thumb-empty" type="button" title="Sem prévia"></button>`;
   }
   return `
     <button class="thumb-button batch-thumb-button" type="button" data-preview-local="${index}" title="Abrir prévia">
-      <img class="thumb art-thumb" src="${escapeHtml(src)}" alt="Prévia de ${escapeHtml(row.fileName || "arte")}" onerror="this.closest('button').classList.add('thumb-empty');this.remove();" />
-      <span>IMG</span>
+      <img class="thumb art-thumb" src="${escapeHtml(src)}" alt="Prévia" onerror="this.closest('button').classList.add('thumb-empty');this.remove();" />
     </button>`;
 }
 
@@ -1746,7 +1784,45 @@ async function validateRows() {
         toast(message);
         return;
       }
-      state.files = await window.artBank.scanImages(folders);
+      const rawFiles = await window.artBank.scanImages(folders);
+      const productFilter = document.getElementById("panel50ProductFilter")?.value;
+      
+      if (productFilter) {
+        const validFiles = [];
+        const invalidNames = [];
+        
+        for (const file of rawFiles) {
+          let isValid = false;
+          if (file.dimensions && file.dimensions.widthCm && file.dimensions.heightCm) {
+            const w = file.dimensions.widthCm;
+            const h = file.dimensions.heightCm;
+            
+            if (productFilter === "bolinha") {
+              if (w >= 57 && w <= 59 && h >= 57 && h <= 59) isValid = true;
+            } else if (productFilter === "painel_150") {
+              const validHeight = h >= 157 && h <= 159;
+              const validWidth = (w >= 157 && w <= 159) || (w >= 162 && w <= 164);
+              if (validHeight && validWidth) isValid = true;
+            } else {
+              isValid = true;
+            }
+          }
+          
+          if (isValid) {
+            validFiles.push(file);
+          } else {
+            invalidNames.push(file.name);
+          }
+        }
+        
+        if (invalidNames.length > 0) {
+          alert(`Atenção: Havia na pasta ${invalidNames.length} arquivo(s) com medidas diferentes do público-alvo selecionado e eles foram ignorados:\n\n${invalidNames.join("\n")}`);
+        }
+        
+        state.files = validFiles;
+      } else {
+        state.files = rawFiles;
+      }
       if (!state.files.length) {
         state.rows = [];
         renderRows();
@@ -1841,8 +1917,16 @@ async function runPanel50Automation() {
     driveLocalRoot: $("#panel50DriveRoot")?.value.trim(),
     mockupPath: $("#panel50MockupPath")?.value.trim(),
     theme: $("#panel50Theme")?.value.trim(),
-    uploadAfter: $("#panel50UploadAfter")?.checked !== false,
+    uploadAfter: true,
   };
+  if (!state.user) {
+    toast("Faça login no Supabase antes de rodar a automação.");
+    return;
+  }
+  if (state.config && state.config.googleAuthorized === false) {
+    toast("O Google Drive não está autorizado. Faça o login na aba Sistema.");
+    return;
+  }
   try {
     startActionProgress("Renomeando e enviando", "Preparando automação.", 8);
     if (button) {

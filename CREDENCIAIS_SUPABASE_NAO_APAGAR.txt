@@ -1,0 +1,8 @@
+URL do Supabase: https://tviagmllvnhnrumhmeli.supabase.co
+Chave Publicável: sb_publishable_UVda8gD9YMptpWTfJLaeTA_3KJmBe-w
+Dashboard: https://supabase.com/dashboard/project/tviagmllvnhnrumhmeli/editor
+
+IMPORTANTE: 
+Este arquivo serve como backup seguro e à prova de falhas.
+Eu também salvei uma cópia idêntica deste arquivo em C:\BancoDeArtes\CREDENCIAIS_SUPABASE_NAO_APAGAR.txt (uma pasta segura fora do projeto).
+Nunca apague este arquivo. Se algum dia o aplicativo perder as configurações de novo, você poderá copiar as chaves daqui!

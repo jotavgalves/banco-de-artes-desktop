@@ -6,11 +6,45 @@ const syncService = require("./syncService");
 
 const SYSTEM_FILES = new Set(["thumbs.db", ".ds_store"]);
 
+const { spawnSync } = require("node:child_process");
+
 function cleanName(value) {
   return String(value || "")
     .replace(/[<>:"/\\|?*\x00-\x1F]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function psQuote(value) {
+  return String(value).replace(/'/g, "''");
+}
+
+function batchMeasureDimensionsCm(folderPath) {
+  const results = {};
+  try {
+    const files = getArtworkFiles(folderPath);
+    for (const f of files) {
+      try {
+        const buf = fs.readFileSync(f);
+        const dim = sizeOf(new Uint8Array(buf));
+        if (dim && dim.width && dim.height) {
+          const wCm = Math.round((dim.width / 72) * 2.54 * 100) / 100;
+          const hCm = Math.round((dim.height / 72) * 2.54 * 100) / 100;
+          results[path.basename(f)] = {
+            cmWidth: wCm,
+            cmHeight: hCm,
+            pxWidth: dim.width,
+            pxHeight: dim.height
+          };
+        }
+      } catch (e) {
+        // ignore unreadable files
+      }
+    }
+  } catch (err) {
+    // ignore folder errors
+  }
+  return results;
 }
 
 function normalize(value) {

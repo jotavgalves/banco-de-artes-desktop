@@ -4,6 +4,7 @@ const path = require("node:path");
 const crypto = require("node:crypto");
 const { app } = require("electron");
 const { google } = require("googleapis");
+const supabaseAuthService = require("./supabaseAuthService");
 const { buildArtworkFilename, normalizeText, normalizeDimension } = require("../shared/rules");
 const { containsArtworkId, findFolderByArtworkId } = require("./fileService");
 
@@ -317,13 +318,15 @@ async function loadRemoteGoogleCredentials(config, appRoot) {
 }
 
 function wrapDriveWithAuthRecovery(config, appRoot, drive, pathParts = []) {
-  return new Proxy(drive, {
-    get(target, prop) {
-      const value = target[prop];
+  // Use an empty object as target so we don't violate Proxy invariants for non-configurable properties like 'files'
+  return new Proxy({}, {
+    get(_target, prop) {
+      if (prop === "then") return undefined; // Prevent Promise resolution issues on proxies
+      const value = drive[prop];
       if (typeof value === "function") {
         return async (...args) => {
           try {
-            return await value.apply(target, args);
+            return await value.apply(drive, args);
           } catch (error) {
             if (!isGoogleAuthError(error)) throw error;
             const freshDrive = await recoverDriveAfterAuthError(config, appRoot, error);
@@ -455,9 +458,10 @@ async function assertDriveUploadReady(config, appRoot, payload = {}) {
   const probeName = `.banco-de-artes-upload-test-${Date.now()}-${crypto.randomUUID()}.txt`;
   let fileId = "";
   try {
+    const { Readable } = require("stream");
     const uploaded = await drive.files.create({
       requestBody: { name: probeName, parents: [targetFolderId] },
-      media: { mimeType: "text/plain", body: Buffer.from("upload preflight") },
+      media: { mimeType: "text/plain", body: Readable.from(["upload preflight"]) },
       fields: "id,name",
       supportsAllDrives: true,
     });
@@ -574,6 +578,7 @@ async function refreshArtworkUrlFromDrive(config, appRoot, payload = {}, options
 }
 
 async function uploadBatch(config, appRoot, rows, onProgress = () => {}, options = {}) {
+  await supabaseAuthService.checkAndRefreshSession(config);
   if (config.maintenanceMode) throw new Error("Sistema em manutenção. Upload bloqueado temporariamente.");
   if (typeof options.persistArtwork !== "function") throw new Error("Upload oficial precisa gravar no Supabase.");
   if (typeof options.usedArtworkIds !== "function") throw new Error("Upload oficial precisa checar IDs no Supabase.");
@@ -781,9 +786,20 @@ async function findOrCreateFolder(drive, name, parentId = null) {
       throw new Error(`Acesso negado ao Link/ID da pasta. Você compartilhou a pasta no Google Drive com o e-mail do bot (banco-de-artes-bot@...)? Detalhe: ${e.message}`);
     }
   }
+  const cleanName = String(name || "").trim();
+  const searchNames = [cleanName];
+  if (cleanName.startsWith(". ")) {
+    const withoutDot = cleanName.slice(2).trim();
+    if (withoutDot) searchNames.push(withoutDot);
+  } else if (cleanName !== "SEM TEMA" && cleanName !== "BOLINHAS 50X50" && cleanName !== "PAINÉIS DE FESTA" && cleanName !== "OTHER") {
+    searchNames.push(". " + cleanName);
+  }
+
   const parentQuery = parentId ? ` and '${parentId}' in parents` : "";
+  const nameQuery = searchNames.map(n => `name = '${escapeQuery(n)}'`).join(" or ");
+
   const result = await drive.files.list({
-    q: `name = '${escapeQuery(name)}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false${parentQuery}`,
+    q: `(${nameQuery}) and mimeType = 'application/vnd.google-apps.folder' and trashed = false${parentQuery}`,
     fields: "files(id,name,webViewLink)",
     pageSize: 1,
     corpora: "allDrives",
@@ -867,8 +883,7 @@ async function syncThemeFolderCache(config, drive, roots) {
   }
 
   const allValidFolderIds = [...rootIds, ...themeFolders.map(f => f.id), ...allSubFolders.map(f => f.id)];
-  
-  const allImages = await fetchInChunks(drive, allValidFolderIds, `(mimeType contains 'image/' or name contains '.jpg' or name contains '.png' or name contains '.webp' or name contains '.tif')`, "id,parents");
+  const allImages = await fetchInChunks(drive, allValidFolderIds, `(mimeType contains 'image/' or name contains '.jpg' or name contains '.png' or name contains '.webp' or name contains '.tif') and mimeType != 'application/vnd.google-apps.shortcut' and mimeType != 'application/vnd.google-apps.folder'`, "id,parents");
 
   const allFolders = [...themeFolders, ...allSubFolders];
 
@@ -914,8 +929,17 @@ async function syncThemeFolderCache(config, drive, roots) {
         }
         return sum;
       }
+      function sumFolders(nodeId) {
+        const children = folderChildren[nodeId] || [];
+        let count = children.length;
+        for (const childId of children) {
+          count += sumFolders(childId);
+        }
+        return count;
+      }
 
       const totalImages = sumImages(themeId);
+      const totalFolders = sumFolders(themeId);
 
       const key = `${rootId}_${folderKey(themeMeta.name)}`;
       if (!themes[key]) {
@@ -925,10 +949,12 @@ async function syncThemeFolderCache(config, drive, roots) {
           parentId: rootId,
           url: themeMeta.webViewLink || driveFolderUrl(themeId),
           imageCount: totalImages,
+          folderCount: totalFolders,
           lastSync: new Date().toISOString(),
         };
       } else {
         themes[key].imageCount += totalImages;
+        themes[key].folderCount = (themes[key].folderCount || 0) + totalFolders;
       }
     }
   }
@@ -943,13 +969,14 @@ async function syncThemeFolderCache(config, drive, roots) {
 
 async function getThemeFolderId(config, drive, rootFolderId, themeName) {
   const cache = readDriveFolderCache(config);
-  const key = `${rootFolderId}_${folderKey(themeName)}`;
+  const name = (themeName || "SEM TEMA").trim();
+  const key = `${rootFolderId}_${folderKey(name)}`;
   if (cache.themes?.[key]?.id) return cache.themes[key].id;
-  const id = await findOrCreateFolder(drive, themeName || "SEM TEMA", rootFolderId);
+  const id = await findOrCreateFolder(drive, name, rootFolderId);
   cache.themes = cache.themes || {};
   cache.themes[key] = {
     id,
-    name: themeName || "SEM TEMA",
+    name,
     parentId: rootFolderId,
     url: driveFolderUrl(id),
     imageCount: Number(cache.themes[key]?.imageCount || 0),

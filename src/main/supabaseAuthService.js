@@ -3,6 +3,19 @@ const crypto = require("node:crypto");
 const { createSupabaseClient, isConfigured } = require("./supabaseService");
 
 let activeSupabase = null;
+let refreshTimer = null;
+
+function startAutoRefresh(config) {
+  if (refreshTimer) clearInterval(refreshTimer);
+  refreshTimer = setInterval(() => checkAndRefreshSession(config), 60 * 1000);
+}
+
+function stopAutoRefresh() {
+  if (refreshTimer) {
+    clearInterval(refreshTimer);
+    refreshTimer = null;
+  }
+}
 
 function authMode(config = {}) {
   return config.supabaseAuthMode || "local";
@@ -51,7 +64,7 @@ async function signIn(config = {}, loginValue = "", password = "") {
     profile,
   };
 
-  return {
+  const payload = {
     provider: "supabase",
     session: {
       id: crypto.createHash("sha256").update(session.access_token).digest("hex").slice(0, 32),
@@ -67,6 +80,8 @@ async function signIn(config = {}, loginValue = "", password = "") {
     },
     user: publicProfile(profile),
   };
+  startAutoRefresh(config);
+  return payload;
 }
 
 async function findProfile(supabase, authUserId, email) {
@@ -127,6 +142,7 @@ async function adminUserAction(config = {}, payload = {}) {
 
 function logout() {
   activeSupabase = null;
+  stopAutoRefresh();
 }
 
 function publicProfile(profile) {
@@ -150,6 +166,25 @@ function friendlyAuthError(message = "") {
   return text || "Falha no login Supabase.";
 }
 
+async function checkAndRefreshSession(config = {}) {
+  if (!activeSupabase || !activeSupabase.refreshToken) return;
+  const now = Math.floor(Date.now() / 1000);
+  if (activeSupabase.expiresAt - now < 300) {
+    try {
+      const supabase = createSupabaseClient(config);
+      const { data, error } = await supabase.auth.refreshSession({ refresh_token: activeSupabase.refreshToken });
+      if (error) throw error;
+      if (data?.session) {
+        activeSupabase.accessToken = data.session.access_token;
+        activeSupabase.refreshToken = data.session.refresh_token;
+        activeSupabase.expiresAt = data.session.expires_at;
+      }
+    } catch (err) {
+      console.warn("Falha ao renovar sessão sob demanda:", err.message);
+    }
+  }
+}
+
 module.exports = {
   adminUserAction,
   authMode,
@@ -159,4 +194,5 @@ module.exports = {
   logout,
   signIn,
   technicalEmailForLogin,
+  checkAndRefreshSession,
 };

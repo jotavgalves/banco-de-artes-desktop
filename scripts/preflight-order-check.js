@@ -41,7 +41,7 @@ async function main() {
     }
 
     const sourceStillThere = fs.existsSync(path.join(inputFolder, "901_TESTE_PAINEL REDONDO_50X50.tif"));
-    const movedFile = path.join(organizedRoot, "TESTE", "901", "901_TESTE_PAINEL REDONDO_50X50.tif");
+    const movedFile = path.join(organizedRoot, ". TESTE", "901", "901_TESTE_PAINEL REDONDO_50X50.tif");
     const moved = fs.existsSync(movedFile);
     if (!failedEarly) throw new Error("A automacao nao falhou no preflight.");
     if (!sourceStillThere) throw new Error("A arte saiu da pasta origem antes do preflight aprovar.");

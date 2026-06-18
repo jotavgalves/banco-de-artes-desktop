@@ -1,0 +1,10 @@
+{
+  "fixedDataFolder": "C:\\BancoDeArtes",
+  "supabaseEnabled": false,
+  "supabaseUrl": "",
+  "supabasePublishableKey": "",
+  "supabaseReadMode": "supabase",
+  "supabaseAuthMode": "local",
+  "supabaseAuthEmailDomain": "bancodeartes.local",
+  "supabaseAdminUsersFunctionName": "admin-users"
+}

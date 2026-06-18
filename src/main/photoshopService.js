@@ -5,6 +5,8 @@ const { spawn } = require("node:child_process");
 const googleService = require("./googleService");
 const supabaseArtworkService = require("./supabaseArtworkService");
 const supabaseCoordinationService = require("./supabaseCoordinationService");
+const supabaseAuthService = require("./supabaseAuthService");
+const { inspectImageFiles } = require("./imageMeasurementService");
 
 const IMAGE_EXTENSIONS = new Set([".tif", ".tiff", ".jpg", ".jpeg", ".png"]);
 const JOB_FILE = "painel50-job.json";
@@ -14,8 +16,6 @@ const DEFAULT_TIMEOUT_MS = 30 * 60 * 1000;
 const MAX_PS_RETRIES = 3;
 const RETRY_DELAY_MS = 5000;
 const MIN_MOCKUP_BYTES = 1024;
-const PRODUCT = "PAINEL REDONDO";
-const SIZE = "50X50";
 const DEFAULT_SOURCE_ROOT = "";
 const DEFAULT_ORGANIZED_ROOT = "X:\\1 - TEMAS ORGANIZADOS";
 const DEFAULT_DRIVE_LOCAL_ROOT = "X:\\2 - DRIVE";
@@ -108,8 +108,8 @@ function parseManagedName(filePath) {
   };
 }
 
-function managedArtworkName(id, theme, extension) {
-  return `${id}_${theme}_${PRODUCT}_${SIZE}${extension.toLowerCase()}`;
+function managedArtworkName(id, theme, product, size, extension) {
+  return `${id}_${theme}_${product}_${size}${extension.toLowerCase()}`;
 }
 
 function isFolderEmpty(folderPath) {
@@ -148,10 +148,33 @@ function jobKey(payload) {
     driveLocalRoot: payload.driveLocalRoot,
     mockupPath: payload.mockupPath,
     theme: payload.theme,
+    product: payload.product,
   })).digest("hex").slice(0, 16);
 }
 
 async function runPanel50Batch(config, appRoot, payload = {}, actor = null, onProgress = () => {}) {
+  await supabaseAuthService.checkAndRefreshSession(config);
+  const useSupabaseArtworks = supabaseArtworkService.canWrite(config);
+  if (useSupabaseArtworks) {
+    onProgress({ phase: "Supabase", current: 0, total: 1, detail: "Validando conexão de gravação Supabase." });
+    // checkAndRefreshSession already threw if session was invalid, but we ensure canWrite is accessible.
+  }
+  
+  const uploadAfter = payload.uploadAfter !== false;
+  const inputProduct = payload.product || "bolinha";
+  const targetProduct = inputProduct === "painel_150" ? "PAINEL" : "PAINEL REDONDO";
+  const targetSize = inputProduct === "painel_150" ? "150X150" : "50X50";
+  const theme = themeFromFolder(payload.inputFolder || config.panel50LastInputFolder || config.panel50SourceRoot || DEFAULT_SOURCE_ROOT, payload.theme);
+
+  if (uploadAfter) {
+    onProgress({ phase: "Teste Drive", current: 0, total: 1, detail: "Confirmando se o Drive aceita upload antes de gerar." });
+    await googleService.assertDriveUploadReady(config, appRoot, {
+      product: targetProduct,
+      size: targetSize,
+      theme,
+    });
+  }
+
   const dir = automationDir(config);
   const stateFile = path.join(dir, JOB_FILE);
   const statusFile = path.join(dir, STATUS_FILE);
@@ -159,24 +182,45 @@ async function runPanel50Batch(config, appRoot, payload = {}, actor = null, onPr
   const inputFolderValue = payload.inputFolder || config.panel50LastInputFolder || config.panel50SourceRoot || DEFAULT_SOURCE_ROOT;
   if (!inputFolderValue) throw new Error("Escolha uma pasta antes de executar a automação.");
   const inputFolder = path.resolve(inputFolderValue);
-  const theme = themeFromFolder(inputFolder, payload.theme);
-  const themeFolderName = cleanFolderName(theme);
   const organizedRoot = path.resolve(payload.organizedRoot || config.panel50OrganizedRoot || DEFAULT_ORGANIZED_ROOT);
   const driveLocalRoot = path.resolve(payload.driveLocalRoot || config.panel50DriveLocalRoot || payload.outputFolder || DEFAULT_DRIVE_LOCAL_ROOT);
+  const resolvedOrganizedThemePath = resolveThemeFolderPath(organizedRoot, cleanFolderName(theme));
+  const themeFolderName = path.basename(resolvedOrganizedThemePath);
   const mockupPath = path.resolve(payload.mockupPath || config.panel50MockupPath || defaultMockupPath(appRoot));
-  const uploadAfter = payload.uploadAfter !== false;
 
   if (!fs.existsSync(mockupPath)) throw new Error(`Mockup nao encontrado: ${mockupPath}`);
   ensureDir(organizedRoot);
   ensureDir(driveLocalRoot);
 
-  const key = jobKey({ inputFolder, organizedRoot, driveLocalRoot, mockupPath, theme });
+  const key = jobKey({ inputFolder, organizedRoot, driveLocalRoot, mockupPath, theme, product: inputProduct });
   const previous = readJson(stateFile, null);
-  const files = listInputImages(inputFolder);
-  if (!files.length) {
+  const inputFiles = listInputImages(inputFolder);
+  if (!inputFiles.length) {
     onProgress({ phase: "Sem imagens", current: 0, total: 0, detail: "Nenhuma imagem encontrada na pasta escolhida." });
     throw new Error("Nenhuma imagem encontrada na pasta escolhida.");
   }
+  onProgress({ phase: "Validando medidas", current: 0, total: inputFiles.length, detail: "Lendo pixels e DPI físico das imagens." });
+  const inspection = await inspectImageFiles(inputFiles, inputProduct);
+  const files = inspection.valid.map((item) => item.path);
+  const rejectedFiles = inspection.rejected.map((item) => ({
+    name: item.name,
+    path: item.path,
+    reason: item.reason,
+    actualSize: item.actualSize,
+    expectedSize: item.expectedSize,
+    dimensions: item.dimensions,
+  }));
+  if (!files.length) {
+    const names = rejectedFiles.map((item) => item.name).join(", ");
+    onProgress({ phase: "Sem imagens válidas", current: 0, total: inputFiles.length, detail: "Todos os arquivos foram bloqueados pelas medidas." });
+    throw new Error(`Nenhuma imagem corresponde ao público-alvo selecionado. Arquivos ignorados: ${names}`);
+  }
+  onProgress({
+    phase: "Medidas validadas",
+    current: files.length,
+    total: inputFiles.length,
+    detail: `${files.length} aprovada(s), ${rejectedFiles.length} ignorada(s) antes dos IDs.`,
+  });
 
   let job = previous?.key === key ? previous : null;
   if (!job) {
@@ -187,10 +231,11 @@ async function runPanel50Batch(config, appRoot, payload = {}, actor = null, onPr
       driveLocalRoot,
       mockupPath,
       theme,
-      product: PRODUCT,
-      size: SIZE,
+      product: targetProduct,
+      size: targetSize,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
+      rejectedFiles,
       items: files.map((file) => ({
         sourcePath: file,
         sourceName: path.basename(file),
@@ -202,6 +247,7 @@ async function runPanel50Batch(config, appRoot, payload = {}, actor = null, onPr
       })),
     };
   } else {
+    job.rejectedFiles = rejectedFiles;
     const known = new Set(job.items.map((item) => item.sourcePath.toLowerCase()));
     const knownOriginalNames = new Set(job.items.map((item) => String(item.originalName || item.sourceName || "").toLowerCase()));
     const knownSourceNames = new Set(job.items.map((item) => String(item.sourceName || "").toLowerCase()));
@@ -213,7 +259,6 @@ async function runPanel50Batch(config, appRoot, payload = {}, actor = null, onPr
     }
   }
 
-  const useSupabaseArtworks = supabaseArtworkService.canWrite(config);
   const needsId = job.items.filter((item) => !item.id);
   if (needsId.length) {
     const reserved = job.items.map((item) => item.id).filter(Boolean);
@@ -225,26 +270,11 @@ async function runPanel50Batch(config, appRoot, payload = {}, actor = null, onPr
     });
   }
 
-  if (uploadAfter) {
-    onProgress({
-      phase: "Teste Drive",
-      current: 0,
-      total: job.items.length,
-      detail: "Confirmando se o Drive aceita upload antes de renomear.",
-    });
-    job.drivePreflight = await googleService.assertDriveUploadReady(config, appRoot, {
-      product: PRODUCT,
-      size: SIZE,
-      theme,
-    });
-    writeJson(stateFile, { ...job, updatedAt: new Date().toISOString() });
-  }
-
   onProgress({ phase: "Renomeando bases", current: 0, total: job.items.length, detail: "Aplicando ID nos arquivos originais." });
   for (const [index, item] of job.items.entries()) {
     const currentPath = fs.existsSync(item.sourcePath)
       ? item.sourcePath
-      : path.join(inputFolder, managedArtworkName(item.id, theme, path.extname(item.sourcePath || item.sourceName || ".tif")));
+      : path.join(inputFolder, managedArtworkName(item.id, theme, targetProduct, targetSize, path.extname(item.sourcePath || item.sourceName || ".tif")));
     if (!fs.existsSync(currentPath)) {
       if (item.status !== "upload_ok") {
         item.status = "error";
@@ -260,7 +290,7 @@ async function runPanel50Batch(config, appRoot, payload = {}, actor = null, onPr
     const mockupIdFolderInfo = ensureDirWithStatus(path.join(driveThemeFolder.path, String(item.id)));
     const baseIdFolder = baseIdFolderInfo.path;
     const mockupIdFolder = mockupIdFolderInfo.path;
-    const targetPath = path.join(baseIdFolder, managedArtworkName(item.id, theme, extension));
+    const targetPath = path.join(baseIdFolder, managedArtworkName(item.id, theme, targetProduct, targetSize, extension));
     ensureUniqueTarget(targetPath, currentPath);
     if (path.resolve(currentPath).toLowerCase() !== path.resolve(targetPath).toLowerCase()) {
       fs.renameSync(currentPath, targetPath);
@@ -270,7 +300,7 @@ async function runPanel50Batch(config, appRoot, payload = {}, actor = null, onPr
     item.sourceName = path.basename(targetPath);
     item.expectedSourcePath = targetPath;
     const previousOutputPath = item.outputPath;
-    const nextOutputPath = path.join(mockupIdFolder, managedArtworkName(item.id, theme, ".jpg"));
+    const nextOutputPath = path.join(mockupIdFolder, managedArtworkName(item.id, theme, targetProduct, targetSize, ".jpg"));
     if (previousOutputPath && fs.existsSync(previousOutputPath) && previousOutputPath.toLowerCase() !== nextOutputPath.toLowerCase()) {
       ensureUniqueTarget(nextOutputPath, previousOutputPath);
       fs.renameSync(previousOutputPath, nextOutputPath);
@@ -376,9 +406,9 @@ async function runPanel50Batch(config, appRoot, payload = {}, actor = null, onPr
       .filter((item) => item.status === "mockup_ok" && fs.existsSync(item.outputPath))
       .map((item) => ({
         id: item.id,
-        theme,
-        product: PRODUCT,
-        size: SIZE,
+        theme: theme.replace(/^\.\s+/, ""), // Remove o ". " antes de subir para a nuvem
+        product: targetProduct,
+        size: targetSize,
         client: "",
         phone: "",
         fileName: path.basename(item.outputPath),
@@ -429,7 +459,7 @@ async function runPanel50Batch(config, appRoot, payload = {}, actor = null, onPr
   }
 
   job.updatedAt = new Date().toISOString();
-  const verification = await buildFinalVerification(job, config, appRoot, { inputFolder, organizedRoot, driveLocalRoot, theme, themeFolderName, uploadAfter });
+  const verification = await buildFinalVerification(job, config, appRoot, { inputFolder, organizedRoot, driveLocalRoot, theme, themeFolderName, uploadAfter, product: targetProduct, size: targetSize });
   verification.cleanup = cleanupInputFolder(inputFolder, verification);
   job.verification = verification;
   writeJson(stateFile, job);
@@ -521,13 +551,13 @@ function folderCheck(folderPath) {
   return { path: folderPath, exists: Boolean(folderPath && fs.existsSync(folderPath)) };
 }
 
-function managedNameMatches(filePath, item, theme) {
+function managedNameMatches(filePath, item, theme, product, size) {
   const parsed = parseManagedName(filePath);
   return Boolean(parsed
     && parsed.id === String(item.id)
     && parsed.theme === normalizeTheme(theme)
-    && parsed.product === PRODUCT
-    && parsed.size === SIZE);
+    && parsed.product === product
+    && parsed.size === size);
 }
 
 async function buildFinalVerification(job, config, appRoot, context) {
@@ -597,9 +627,9 @@ function verifyItem(item, context, supabaseRows, supabaseError, driveResults, dr
     || path.resolve(sourceInputPath).toLowerCase() === path.resolve(item.sourcePath || "").toLowerCase()
     || !fs.existsSync(sourceInputPath);
   const sourceInOrganized = source.ok && isInside(expectedOrganizedIdFolder, item.sourcePath);
-  const sourceNameOk = source.ok && managedNameMatches(item.sourcePath, item, context.theme);
+  const sourceNameOk = source.ok && managedNameMatches(item.sourcePath, item, context.theme, context.product, context.size);
   const mockupInDriveLocal = mockup.ok && isInside(expectedDriveIdFolder, item.outputPath);
-  const mockupNameOk = mockup.ok && managedNameMatches(item.outputPath, item, context.theme);
+  const mockupNameOk = mockup.ok && managedNameMatches(item.outputPath, item, context.theme, context.product, context.size);
   const folders = {
     organizedTheme: { ...(item.folderAudit?.organizedTheme || folderCheck(path.join(context.organizedRoot, context.themeFolderName))), exists: fs.existsSync(path.join(context.organizedRoot, context.themeFolderName)) },
     organizedId: { ...(item.folderAudit?.organizedId || folderCheck(expectedOrganizedIdFolder)), exists: fs.existsSync(expectedOrganizedIdFolder) },
@@ -836,6 +866,14 @@ function jsxString(value) {
   return String(value).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 }
 
+function resolveThemeFolderPath(rootDir, themeName) {
+  const cleanName = cleanFolderName(themeName);
+  const withoutDot = cleanName.startsWith(". ") ? cleanName.slice(2).trim() : cleanName;
+  const withDot = ". " + withoutDot;
+  return path.join(rootDir, withDot);
+}
+
 module.exports = {
   runPanel50Batch,
+  resolveThemeFolderPath,
 };

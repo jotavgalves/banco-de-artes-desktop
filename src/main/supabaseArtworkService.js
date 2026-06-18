@@ -1,13 +1,13 @@
-const { createSupabaseClient } = require("./supabaseService");
+const { createSupabaseClient, isConfigured } = require("./supabaseService");
 const supabaseAuthService = require("./supabaseAuthService");
 const { normalizeDimension, normalizeText } = require("../shared/rules");
 
 function canRead(config = {}) {
-  return Boolean(config.supabaseEnabled && ["supabase-readonly", "supabase"].includes(config.supabaseReadMode));
+  return Boolean(config.supabaseEnabled && isConfigured(config) && ["supabase-readonly", "supabase"].includes(config.supabaseReadMode));
 }
 
 function canWrite(config = {}) {
-  return Boolean(config.supabaseEnabled && config.supabaseReadMode === "supabase" && supabaseAuthService.current()?.accessToken);
+  return Boolean(config.supabaseEnabled && isConfigured(config) && config.supabaseReadMode === "supabase" && supabaseAuthService.current()?.accessToken);
 }
 
 function client(config = {}) {
