@@ -556,6 +556,71 @@ td:last-child {
     grid-template-columns: 1fr;
   }
 }
+@media (max-width: 600px) {
+  .order-modal-body {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* QUARANTINE UI */
+.quarantine-badge {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  background-color: var(--red);
+  color: white;
+  font-size: 10px;
+  font-weight: 800;
+  padding: 2px 6px;
+  border-radius: 10px;
+  box-shadow: 0 2px 4px rgba(220, 38, 38, 0.4);
+  z-index: 10;
+  cursor: pointer;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  backdrop-filter: blur(4px);
+}
+.quarantine-badge.hidden {
+  display: none !important;
+}
+.quarantine-item {
+  display: flex;
+  flex-direction: column;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-base);
+  box-shadow: var(--shadow-sm);
+  gap: 8px;
+}
+.quarantine-item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.quarantine-item-title {
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--text-1);
+}
+.quarantine-item-files {
+  font-size: 11px;
+  color: var(--text-2);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.quarantine-item-error {
+  font-size: 11px;
+  color: var(--red);
+  background: rgba(220, 38, 38, 0.05);
+  padding: 6px;
+  border-radius: 4px;
+}
+.quarantine-item-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
 
 /* Polish pass: contraste, ritmo, vitrine e estados de carregamento. */
 :root {
@@ -3499,4 +3564,282 @@ body,
   .summary-stack {
     grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
   }
+}
+
+/* ---- REDESIGN VITRINE ---- */
+#artworkCardGrid {
+  gap: 16px !important;
+  padding: 16px !important;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)) !important;
+}
+#artworkCardGrid .artwork-card {
+  background: #ffffff !important;
+  border: 1px solid #e5e7eb !important;
+  border-radius: 12px !important;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.03) !important;
+  transition: box-shadow 0.2s ease !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+}
+#artworkCardGrid .artwork-card:hover {
+  box-shadow: 0 8px 16px rgba(0,0,0,0.08) !important;
+}
+#artworkCardGrid .artwork-card-preview {
+  height: 180px !important;
+  background: #f3f4f6 !important;
+  border-radius: 12px 12px 0 0 !important;
+  position: relative !important;
+}
+#artworkCardGrid .artwork-card-preview img {
+  object-fit: cover !important;
+  border-radius: 12px 12px 0 0 !important;
+  height: 100% !important;
+  width: 100% !important;
+}
+#artworkCardGrid .artwork-card-id {
+  position: absolute !important;
+  top: 8px !important;
+  left: 8px !important;
+  background: rgba(0, 0, 0, 0.6) !important;
+  color: #fff !important;
+  font-size: 11px !important;
+  padding: 2px 8px !important;
+  border-radius: 9999px !important;
+  font-weight: 500 !important;
+  z-index: 2 !important;
+}
+#artworkCardGrid .artwork-card-body {
+  padding: 10px 12px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 4px !important;
+}
+#artworkCardGrid .artwork-card-body strong {
+  font-weight: 500 !important;
+  font-size: 14px !important;
+  color: var(--text) !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+#artworkCardGrid .artwork-card-body > span {
+  font-size: 12px !important;
+  color: var(--text-2, #6b7280) !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+#artworkCardGrid .artwork-card-meta small {
+  font-size: 12px !important;
+  color: var(--text-2, #6b7280) !important;
+}
+#artworkCardGrid .artwork-card-meta small.no-client {
+  font-size: 11px !important;
+  color: #9ca3af !important;
+}
+.artwork-empty-icon {
+  width: 32px !important;
+  height: 32px !important;
+  fill: #9ca3af !important;
+  margin: auto !important;
+  display: block !important;
+}
+#artworkCardGrid .artwork-card-preview.is-empty {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+/* Header fix for artworkToolsButton */
+#artworkToolsButton {
+  background: transparent !important;
+  border: 1px solid transparent !important;
+}
+#artworkToolsButton:hover {
+  background: var(--surface) !important;
+}
+
+/* Filters Width Fix */
+#artworkSort,
+#artworkFilterTheme,
+#artworkFilterProduct,
+#artworkFilterUser {
+  min-width: 140px !important;
+}
+
+/* ---- REDESIGN USERS VIEW ---- */
+/* Sidebar active icon */
+.nav-item.active .nav-icon svg {
+  fill: #ffffff !important;
+}
+
+/* User Tabs */
+.user-tabs button {
+  transition: all 0.2s ease !important;
+}
+.user-tabs button.active {
+  background: #ffffff !important;
+  border-color: var(--border) !important;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.05) !important;
+  color: var(--text) !important;
+}
+
+/* User Form Labels and Inputs */
+.form-label {
+  text-transform: none !important;
+  font-weight: 500 !important;
+  font-size: 13px !important;
+  color: var(--text-2, #6b7280) !important;
+}
+.form-input {
+  padding: 8px 12px !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 6px !important;
+  outline: none !important;
+  transition: border-color 0.2s !important;
+  min-height: 36px !important;
+}
+.form-input:focus {
+  border-color: var(--blue) !important;
+}
+.form-input::placeholder {
+  color: var(--text-3, #9ca3af) !important;
+}
+
+/* User Cards Hover Actions */
+.user-action-btn-delete:hover {
+  background-color: #fee2e2 !important;
+  color: #991b1b !important;
+}
+.user-action-btn-delete:hover svg {
+  fill: #991b1b !important;
+}
+.user-action-btn-edit:hover {
+  background-color: #eff6ff !important;
+  color: #1d4ed8 !important;
+}
+.user-action-btn-edit:hover svg {
+  fill: #1d4ed8 !important;
+}
+.user-card:last-child {
+  border-bottom: none !important;
+}
+.user-card:hover {
+  background-color: #f9fafb !important;
+}
+
+/* ==========================================================================
+   SCROLLBAR GLOBAL E CORRECOES DE MODAL
+   ==========================================================================
+   Padrão: Todo elemento rolável deve usar um container externo com
+   border-radius e overflow: hidden, e um container interno com
+   overflow-y: auto e padding-right.
+   ========================================================================== */
+
+* {
+  scrollbar-width: thin !important;
+  scrollbar-color: rgba(156, 163, 175, 0.5) transparent !important;
+}
+::-webkit-scrollbar {
+  width: 5px !important;
+  height: 5px !important;
+}
+::-webkit-scrollbar-track {
+  background: transparent !important;
+}
+::-webkit-scrollbar-thumb {
+  background-color: rgba(156, 163, 175, 0.5) !important;
+  border-radius: 9999px !important;
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(156, 163, 175, 0.8) !important;
+}
+
+/* Modais globais - Container externo (Overlay) */
+.modal {
+  overflow: hidden !important;
+}
+
+/* Modais globais - Container do card */
+.modal-card {
+  max-height: 85vh !important;
+  overflow: hidden !important;
+  display: flex !important;
+  flex-direction: column !important;
+  padding: 0 !important;
+}
+
+/* Base modals general content adjustments */
+.modal-card > .modal-toolbar {
+  padding: 18px 18px 0 18px !important;
+  flex-shrink: 0 !important;
+}
+
+/* Envolve as mensagens genericas ou quadrados de preview em scroll */
+.modal-card > .confirm-message, 
+.modal-card > .preview-square, 
+.modal-card > .find-options {
+  padding: 14px 18px !important;
+  overflow-y: auto !important;
+  padding-right: 8px !important;
+  flex: 1 !important;
+  min-height: 0 !important;
+}
+
+.modal-card > .confirm-actions, 
+.modal-card > .modal-actions {
+  padding: 0 18px 18px 18px !important;
+  flex-shrink: 0 !important;
+}
+
+/* Warning Modal Específico (Arquivos Ignorados) */
+.warning-modal-header {
+  padding: 24px 24px 16px 24px !important;
+  flex-shrink: 0 !important;
+  border-bottom: 1px solid var(--line) !important;
+}
+.warning-modal-content {
+  padding: 16px 24px !important;
+  overflow-y: auto !important;
+  padding-right: 8px !important;
+  flex: 1 !important;
+  min-height: 0 !important;
+}
+.warning-modal-footer {
+  padding: 16px 24px 24px 24px !important;
+  flex-shrink: 0 !important;
+  border-top: 1px solid var(--line) !important;
+  display: flex !important;
+  justify-content: flex-end !important;
+}
+
+.error-block {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: center !important;
+  text-align: center !important;
+  padding: 40px 24px !important;
+  border: 1px dashed var(--line) !important;
+  border-radius: 18px !important;
+  background: #fff !important;
+  gap: 12px !important;
+  min-height: 200px !important;
+}
+.error-block svg {
+  width: 32px !important;
+  height: 32px !important;
+  fill: rgba(220, 38, 38, 0.7) !important; /* #dc2626 com opacidade */
+  margin-bottom: 4px !important;
+}
+.error-block strong {
+  color: rgba(220, 38, 38, 0.8) !important;
+  font-size: 16px !important;
+  font-weight: 800 !important;
+}
+.error-block span {
+  color: var(--text-2, #6b7280) !important;
+  font-size: 13px !important;
+  max-width: 300px !important;
+  margin-bottom: 8px !important;
 }

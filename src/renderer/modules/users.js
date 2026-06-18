@@ -1,7 +1,30 @@
 async function refreshUsers() {
-  renderListSkeleton("#userList", 5);
-  state.users = await window.artBank.listUsers();
-  renderUserCards();
+  const list = $("#userList");
+  if (state.users && state.users.length > 0) {
+    renderUserCards();
+  } else if (list) {
+    renderListSkeleton("#userList", 5);
+  }
+
+  try {
+    state.users = await window.artBank.listUsers();
+    renderUserCards();
+  } catch (error) {
+    if (!state.users || state.users.length === 0) {
+      if (list) {
+        list.innerHTML = `
+          <div class="error-block">
+            <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
+            <strong>Conexão falhou</strong>
+            <span>Não foi possível carregar os usuários no momento.</span>
+            <button class="secondary-button" type="button" onclick="refreshUsers()">Tentar novamente</button>
+          </div>
+        `;
+      }
+    } else {
+      toast("Falha ao atualizar usuários: " + error.message);
+    }
+  }
 }
 
 function renderUserCards() {
@@ -10,33 +33,41 @@ function renderUserCards() {
      u.name.toLowerCase().includes(query) || u.login.toLowerCase().includes(query)
   );
   
-  if ($("#usersCountBadge")) $("#usersCountBadge").textContent = `${filtered.length} usuário(s)`;
+  if ($("#usersCountBadge")) $("#usersCountBadge").textContent = `${filtered.length} usuários`;
   
   const list = $("#userList");
   if (!list) return;
 
-  const colors = ["avatar-blue", "avatar-teal", "avatar-coral", "avatar-purple"];
+  const colorClasses = ["avatar-blue", "avatar-teal", "avatar-coral", "avatar-purple"];
 
-  list.innerHTML = filtered.map((user, idx) => {
+  list.innerHTML = filtered.map((user) => {
     const initials = user.name.substring(0, 2).toUpperCase();
-    const color = colors[idx % colors.length];
-    const roleBadge = user.role === "admin" ? `<span class="badge admin-badge">Admin</span>` : `<span class="badge operator-badge">Operador</span>`;
-    const statusBadge = user.active ? `<span class="badge active-badge">Ativo</span>` : `<span class="badge inactive-badge">Inativo</span>`;
+    const hash = Array.from(user.login).reduce((acc, char) => acc + char.charCodeAt(0), 0);
+    const colorClass = colorClasses[hash % colorClasses.length];
+    
+    const roleBadge = user.role === "admin" 
+        ? `<span class="badge admin-badge" style="background: #e0e7ff; color: #3730a3; font-size: 11px; padding: 2px 8px; border-radius: 999px; border: none; font-weight: 500;">Admin</span>` 
+        : `<span class="badge operator-badge" style="background: #f3f4f6; color: #4b5563; font-size: 11px; padding: 2px 8px; border-radius: 999px; border: none; font-weight: 500;">Operador</span>`;
+    const statusBadge = user.active 
+        ? `<span class="badge active-badge" style="background: #dcfce7; color: #166534; font-size: 11px; padding: 2px 8px; border-radius: 999px; border: none; font-weight: 500;">Ativo</span>` 
+        : `<span class="badge inactive-badge" style="background: #fee2e2; color: #991b1b; font-size: 11px; padding: 2px 8px; border-radius: 999px; border: none; font-weight: 500;">Inativo</span>`;
     
     return `
-      <div class="user-card" data-user-card="${escapeHtml(user.login)}">
-        <div class="user-avatar ${color}">${escapeHtml(initials)}</div>
-        <div class="user-details">
-          <strong>${escapeHtml(user.name)}</strong>
-          <div class="user-badges">${roleBadge} ${statusBadge}</div>
-          <span class="user-login">${escapeHtml(user.login)}</span>
+      <div class="user-card" data-user-card="${escapeHtml(user.login)}" style="display:flex; align-items:center; gap:16px; padding: 16px 0; border-bottom: 1px solid var(--border); cursor: pointer; transition: background-color 0.2s ease;">
+        <div class="user-avatar ${colorClass}" style="width: 44px; height: 44px; border-radius: 50%; display:flex; align-items:center; justify-content:center; font-weight: 600; font-size: 14px;">${escapeHtml(initials)}</div>
+        <div class="user-details" style="flex:1; display:flex; flex-direction:column; gap:4px;">
+          <div style="display:flex; align-items:center; gap:8px;">
+            <strong style="font-weight: 500; font-size: 15px; color: var(--text); margin: 0;">${escapeHtml(user.name)}</strong>
+            <div class="user-badges" style="display:flex; gap:6px;">${roleBadge} ${statusBadge}</div>
+          </div>
+          <span class="user-login" style="font-size: 12px; color: var(--text-2); margin: 0;">${escapeHtml(user.login)}</span>
         </div>
-        <div class="user-actions">
-          <button class="icon-btn edit-btn" title="Editar" aria-label="Editar usuario">
-            <svg viewBox="0 0 24 24"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zm17.71-10.04a1.003 1.003 0 0 0 0-1.42l-2.5-2.5a1.003 1.003 0 0 0-1.42 0l-1.96 1.96 3.75 3.75 2.13-1.79z"/></svg>
+        <div class="user-actions" style="display:flex; gap:8px;">
+          <button class="icon-btn edit-btn user-action-btn-edit" title="Editar" aria-label="Editar usuario" style="padding: 8px; border-radius: 8px;">
+            <svg viewBox="0 0 24 24" style="width:18px;height:18px;"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zm17.71-10.04a1.003 1.003 0 0 0 0-1.42l-2.5-2.5a1.003 1.003 0 0 0-1.42 0l-1.96 1.96 3.75 3.75 2.13-1.79z"/></svg>
           </button>
-          <button class="icon-btn delete-btn" data-del="${escapeHtml(user.login)}" title="Excluir" aria-label="Excluir usuario">
-            <svg viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM8 9h8v10H8V9zm7.5-5-1-1h-5l-1 1H5v2h14V4h-3.5z"/></svg>
+          <button class="icon-btn delete-btn user-action-btn-delete" data-del="${escapeHtml(user.login)}" title="Excluir" aria-label="Excluir usuario" style="padding: 8px; border-radius: 8px;">
+            <svg viewBox="0 0 24 24" style="width:18px;height:18px;"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM8 9h8v10H8V9zm7.5-5-1-1h-5l-1 1H5v2h14V4h-3.5z"/></svg>
           </button>
         </div>
       </div>

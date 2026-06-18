@@ -20,6 +20,7 @@ async function refreshFinanceClients() {
 
 async function openOrderModal() {
   await refreshFinanceClients();
+  if (window.refreshQuarantineBadge) window.refreshQuarantineBadge();
   $("#orderModal")?.classList.remove("hidden");
   setTimeout(() => $("#orderModal")?.classList.add("is-open"), 20);
   $("#financeClientInput")?.focus();
@@ -374,3 +375,64 @@ if (document.readyState === 'loading') {
 } else {
   if (typeof boot === 'function') boot();
 }
+
+window.refreshQuarantineBadge = async function() {
+  try {
+    const list = await window.artBank.listQuarantine();
+    const badge = document.getElementById("quarantineNavBadge");
+    if (badge) {
+      if (list && list.length > 0) {
+        badge.textContent = list.length;
+        badge.classList.remove("hidden");
+      } else {
+        badge.classList.add("hidden");
+      }
+    }
+  } catch (error) {
+    console.error("Erro ao atualizar badge de quarentena:", error);
+  }
+};
+
+window.openQuarantineModal = async function() {
+  try {
+    const list = await window.artBank.listQuarantine();
+    const container = document.getElementById("quarantineList");
+    if (!container) return;
+    
+    if (!list || list.length === 0) {
+      container.innerHTML = "<p class='muted'>Nenhum arquivo na quarentena.</p>";
+      if (window.refreshQuarantineBadge) window.refreshQuarantineBadge();
+    } else {
+      container.innerHTML = list.map(item => `
+        <div class="quarantine-item">
+          <div class="quarantine-item-header">
+            <span class="quarantine-item-title">${escapeHtml(item.artName)}</span>
+          </div>
+          <div class="quarantine-item-files">
+            ${item.files.map(f => `
+              <span><strong>Arquivo:</strong> ${escapeHtml(f.fileName)}</span>
+              <div class="quarantine-item-error">${escapeHtml(f.error)}</div>
+            `).join("")}
+          </div>
+          <div class="quarantine-item-actions">
+            <button class="ghost-button" onclick="window.discardQuarantine('${item.quarantineId}')">Descartar</button>
+            ${item.driveFolderId ? `<button class="secondary-button" onclick="window.artBank.openExternal('https://drive.google.com/drive/folders/${item.driveFolderId}')">Abrir pasta no Drive</button>` : ''}
+          </div>
+        </div>
+      `).join("");
+    }
+    document.getElementById("quarantineModal")?.classList.remove("hidden");
+  } catch (error) {
+    console.error("Erro ao abrir quarentena:", error);
+  }
+};
+
+window.discardQuarantine = async function(id) {
+  try {
+    await window.artBank.removeFromQuarantine(id);
+    await window.refreshQuarantineBadge();
+    await window.openQuarantineModal(); // Refresh modal
+  } catch (error) {
+    console.error("Erro ao remover da quarentena:", error);
+  }
+};

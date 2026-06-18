@@ -407,6 +407,11 @@ async function doUpload(rows) {
     if($("#uploadHint")) $("#uploadHint").textContent = `${result.successes.length} enviadas, ${result.failures.length} falhas.`;
     finishActionProgress("Envio finalizado.");
 
+    if (result.quarantinedFiles && result.quarantinedFiles.length > 0) {
+      toast(`${result.quarantinedFiles.length} arquivo(s) não subiram e foram enviados para quarentena.`);
+      if (window.refreshQuarantineBadge) window.refreshQuarantineBadge();
+    }
+
     // Atualiza cache rapidamente apos envio
     state.cache = await window.artBank.runSync().catch(() => state.cache);
 

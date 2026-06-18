@@ -1,6 +1,9 @@
 async function refreshDriveFolders(refresh = false) {
   const list = $("#driveFolderList");
-  if (list) {
+  
+  if (state.driveFolders) {
+    renderDriveFolders();
+  } else if (list) {
     list.innerHTML = Array.from({ length: 8 }).map(() => `
       <article class="drive-card skeleton-card" aria-hidden="true">
         <div class="skeleton skeleton-line wide"></div>
@@ -9,12 +12,25 @@ async function refreshDriveFolders(refresh = false) {
       </article>
     `).join("");
   }
+  
   try {
     state.driveFolders = await window.artBank.listDriveFolders(Boolean(refresh));
     renderDriveFolders();
   } catch (error) {
-    if (list) list.innerHTML = `<div class="diagnostic-item error"><strong>Falha ao carregar Drive</strong><span>${escapeHtml(friendlyError(error.message))}</span></div>`;
-    toast(error.message);
+    if (!state.driveFolders) {
+      if (list) {
+        list.innerHTML = `
+          <div class="error-block" style="grid-column: 1 / -1;">
+            <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
+            <strong>Conexão falhou</strong>
+            <span>Não foi possível carregar as pastas do Drive no momento.</span>
+            <button class="secondary-button" type="button" onclick="refreshDriveFolders(true)">Tentar novamente</button>
+          </div>
+        `;
+      }
+    } else {
+      toast("Falha ao atualizar Drive: " + error.message);
+    }
   }
 }
 

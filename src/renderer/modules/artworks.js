@@ -42,26 +42,52 @@ function nextAvailableDashboardId(maxId) {
 }
 
 async function refreshReservations() {
-  renderListSkeleton("#reservationList", 4);
-  state.reservations = await window.artBank.listReservations();
-  const reservedIds = state.reservations.reduce((sum, item) => sum + item.ids.length, 0);
-  if($("#metricReserved")) $("#metricReserved").textContent = reservedIds;
+  const list = $("#reservationList");
   
-  const metric = document.querySelector(".reserved-metric");
-  if(metric) metric.classList.toggle("has-reservations", reservedIds > 0);
-  
-  if($("#reservationList")) {
-    $("#reservationList").innerHTML = state.reservations.map((item) => `
-      <div class="reservation-row reservation-card">
-        <div><strong>${escapeHtml(item.label)}</strong><span>${rangeLabel(item.ids)} · ${escapeHtml(item.name)} · expira ${formatTime(item.expiresAt)}</span></div>
-        <button class="tiny-button" data-release="${item.id}">Liberar</button>
-      </div>
-    `).join("") || `<div class="reservation-row"><span style="color:var(--text-3)">Nenhuma reserva ativa.</span></div>`;
+  const renderList = (data) => {
+    const reservedIds = data.reduce((sum, item) => sum + item.ids.length, 0);
+    if($("#metricReserved")) $("#metricReserved").textContent = reservedIds;
+    const metric = document.querySelector(".reserved-metric");
+    if(metric) metric.classList.toggle("has-reservations", reservedIds > 0);
+    if (list) {
+      list.innerHTML = data.map((item) => `
+        <div class="reservation-row reservation-card">
+          <div><strong>${escapeHtml(item.label)}</strong><span>${rangeLabel(item.ids)} · ${escapeHtml(item.name)} · expira ${formatTime(item.expiresAt)}</span></div>
+          <button class="tiny-button" data-release="${item.id}">Liberar</button>
+        </div>
+      `).join("") || `<div class="reservation-row"><span style="color:var(--text-3)">Nenhuma reserva ativa.</span></div>`;
+      $$("[data-release]").forEach(btn => btn.addEventListener("click", async () => {
+        await window.artBank.releaseReservation(btn.dataset.release);
+        await refreshReservations();
+      }));
+    }
+  };
+
+  if (state.reservations && state.reservations.length > 0) {
+    renderList(state.reservations);
+  } else if (list) {
+    renderListSkeleton("#reservationList", 4);
   }
-  $$("[data-release]").forEach((button) => button.addEventListener("click", async () => {
-    await window.artBank.releaseReservation(button.dataset.release);
-    await refreshReservations();
-  }));
+
+  try {
+    state.reservations = await window.artBank.listReservations();
+    renderList(state.reservations);
+  } catch (error) {
+    if (!state.reservations || state.reservations.length === 0) {
+      if (list) {
+        list.innerHTML = `
+          <div class="error-block">
+            <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
+            <strong>Conexão falhou</strong>
+            <span>Não foi possível carregar as reservas no momento.</span>
+            <button class="secondary-button" type="button" onclick="refreshReservations()">Tentar novamente</button>
+          </div>
+        `;
+      }
+    } else {
+      toast("Falha ao atualizar reservas: " + error.message);
+    }
+  }
   await refreshDashboardData();
 }
 
@@ -86,23 +112,43 @@ async function createReservation(event) {
 async function refreshArtworks(options = {}) {
   const { force = false, showLoading = false } = options;
   const isFirstLoad = !state.artworks || state.artworks.length === 0;
-  if (showLoading || force) startActionProgress("Carregando banco visual", "Lendo base oficial e cache.", 12);
-  if (showLoading && $("#artworkRows")) {
+  
+  if (!isFirstLoad) {
+    populateArtworkFilters();
+    renderFilteredArtworks();
+  } else if (showLoading && $("#artworkRows")) {
     renderArtworkSkeleton();
   }
+
+  if (showLoading || force) startActionProgress("Carregando banco visual", "Lendo base oficial e cache.", 12);
+  
   if (force) {
     updateActionProgress(32, "Sincronizando cache local.");
     state.cache = await window.artBank.runSync().catch(() => state.cache);
   }
-  updateActionProgress(58, "Carregando artes cadastradas.");
-  state.artworks = await window.artBank.listArtworks().catch((error) => {
-    if($("#artworkRows")) $("#artworkRows").innerHTML = `<tr><td colspan="9">${escapeHtml(friendlyError(error.message))}</td></tr>`;
-    if ($("#artworkCardGrid")) $("#artworkCardGrid").innerHTML = `<div class="empty-state-block">Falha ao carregar: ${escapeHtml(friendlyError(error.message))}</div>`;
-    toast(error.message);
+  if (showLoading || force) updateActionProgress(58, "Carregando artes cadastradas.");
+  
+  try {
+    const freshArtworks = await window.artBank.listArtworks();
+    state.artworks = freshArtworks;
+  } catch (error) {
+    if (!state.artworks || state.artworks.length === 0) {
+      if($("#artworkRows")) $("#artworkRows").innerHTML = `<tr><td colspan="9">${escapeHtml(friendlyError(error.message))}</td></tr>`;
+      if ($("#artworkCardGrid")) $("#artworkCardGrid").innerHTML = `
+        <div class="error-block">
+          <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
+          <strong>Conexão falhou</strong>
+          <span>Não foi possível carregar o banco de artes no momento.</span>
+          <button class="secondary-button" type="button" onclick="refreshArtworks({force: true})">Tentar novamente</button>
+        </div>`;
+    } else {
+      toast("Falha ao atualizar artes: " + error.message);
+    }
     if (showLoading || force) finishActionProgress("Falha ao carregar banco visual.");
-    return [];
-  });
-  if (!state.artworks.length) {
+    return;
+  }
+
+  if (!state.artworks || !state.artworks.length) {
     if($("#artworkRows")) $("#artworkRows").innerHTML = `<tr><td colspan="9">Nenhuma arte carregada.</td></tr>`;
     if ($("#artworkCardGrid")) $("#artworkCardGrid").innerHTML = `<div class="empty-state-block">Nenhuma arte carregada.</div>`;
     if (showLoading || force) finishActionProgress("Nenhuma arte carregada.");
@@ -249,14 +295,14 @@ function renderArtworkCards(artworks) {
     return `
       <article class="artwork-card" data-art-card="${escapeHtml(art.id)}">
         <button class="artwork-card-preview ${preview ? "" : "is-empty"}" type="button" ${preview ? `data-preview-drive="${escapeHtml(art.url)}" data-preview-id="${escapeHtml(art.id)}"` : ""} aria-label="Abrir prévia da arte ${escapeHtml(art.id)}">
-          ${preview ? `<img src="${escapeHtml(preview)}" alt="Prévia da arte ${escapeHtml(art.id)}" loading="lazy" onload="markArtworkImageLoaded('${escapeHtml(art.id)}')" onerror="markArtworkImageBroken('${escapeHtml(art.id)}', this.parentElement);this.remove();" />` : `<span>Sem prévia</span>`}
+          ${preview ? `<img src="${escapeHtml(preview)}" alt="Prévia da arte ${escapeHtml(art.id)}" loading="lazy" onload="markArtworkImageLoaded('${escapeHtml(art.id)}')" onerror="markArtworkImageBroken('${escapeHtml(art.id)}', this.parentElement);this.remove();" />` : `<svg class="artwork-empty-icon" viewBox="0 0 24 24"><path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/></svg>`}
           <span class="artwork-card-id">#${escapeHtml(art.id || "-")}</span>
         </button>
         <div class="artwork-card-body">
           <strong title="${escapeHtml(art.theme || "Sem tema")}">${escapeHtml(art.theme || "Sem tema")}</strong>
           <span>${escapeHtml(art.product || "Sem produto")} · ${escapeHtml(art.size || "Sem tamanho")}</span>
           <div class="artwork-card-meta">
-            <small>${escapeHtml(art.client || "Sem cliente")}</small>
+            <small class="${art.client ? '' : 'no-client'}">${escapeHtml(art.client || "Sem cliente")}</small>
           </div>
         </div>
       </article>

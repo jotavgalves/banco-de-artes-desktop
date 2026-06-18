@@ -618,6 +618,8 @@ async function uploadBatch(config, appRoot, rows, onProgress = () => {}, options
     }
 
     for (const row of rows) {
+      let targetFolderId = null;
+      let finalFileName = null;
       try {
         progress("Enviando arquivos", successes.length + failures.length, rows.length, row.fileName || `ID ${row.id}`);
         const normalized = normalizeArtworkRow(row, config);
@@ -625,13 +627,13 @@ async function uploadBatch(config, appRoot, rows, onProgress = () => {}, options
         const rootFolderId = rootFolderName === rootFolderName50 ? rootFolderId50 : rootFolderIdOther;
         const themeFolderId = await getThemeFolderId(config, drive, rootFolderId, normalized.theme);
         
-        let targetFolderId = themeFolderId;
+        targetFolderId = themeFolderId;
         if (rootFolderName !== rootFolderName50) {
           const productFolderName = getProductFolderName(normalized.product, normalized.size);
           targetFolderId = await findOrCreateFolder(drive, productFolderName, themeFolderId);
         }
 
-        const fileName = buildArtworkFilename({
+        finalFileName = buildArtworkFilename({
           id: normalized.id,
           theme: normalized.theme,
           product: normalized.product,
@@ -639,7 +641,7 @@ async function uploadBatch(config, appRoot, rows, onProgress = () => {}, options
           extension: path.extname(row.fileName || row.path || ".jpg") || ".jpg",
         });
         const uploaded = await drive.files.create({
-          requestBody: { name: fileName, parents: [targetFolderId] },
+          requestBody: { name: finalFileName, parents: [targetFolderId] },
           media: { mimeType: mimeTypeForFile(row.path || row.fileName), body: fs.createReadStream(row.path) },
           fields: "id,webViewLink,webContentLink",
           supportsAllDrives: true,
@@ -651,11 +653,18 @@ async function uploadBatch(config, appRoot, rows, onProgress = () => {}, options
           }).catch(() => null);
         }
         const url = uploaded.data.webViewLink || uploaded.data.webContentLink || `https://drive.google.com/file/d/${uploaded.data.id}/view`;
-        successes.push({ ...row, ...normalized, url, fileName, driveFileId: uploaded.data.id });
+        successes.push({ ...row, ...normalized, url, fileName: finalFileName, driveFileId: uploaded.data.id });
         incrementThemeCache(config, normalized.theme, rootFolderId);
-        progress("Enviando arquivos", successes.length + failures.length, rows.length, `${fileName} enviado.`);
+        progress("Enviando arquivos", successes.length + failures.length, rows.length, `${finalFileName} enviado.`);
       } catch (error) {
-        failures.push({ ...row, error: error.message });
+        failures.push({ 
+          ...row, 
+          ok: false,
+          localPath: row.path,
+          fileName: finalFileName || row.fileName,
+          driveFolderId: targetFolderId,
+          error: error.message 
+        });
         progress("Falha em arquivo", successes.length + failures.length, rows.length, `${row.fileName || row.id}: ${error.message}`);
       }
     }

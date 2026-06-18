@@ -13,6 +13,8 @@ const { buildProvisioningPlan } = require("./googleBlueprint");
 const googleService = require("./googleService");
 const userService = require("./userService");
 const auditService = require("./auditService");
+const quarantineService = require("./quarantineService");
+const errorLogService = require("./errorLogService");
 const { parseArtworkFilename, validateBatchRows } = require("../shared/rules");
 const syncService = require("./syncService");
 const photoshopService = require("./photoshopService");
@@ -246,6 +248,16 @@ function registerIpc() {
     return supabaseService.status(loadConfig());
   });
 
+  ipcMain.handle("quarantine:list", () => {
+    requireActor();
+    return quarantineService.listQuarantine(loadConfig());
+  });
+
+  ipcMain.handle("quarantine:remove", (_event, id) => {
+    requireActor();
+    return quarantineService.removeFromQuarantine(loadConfig(), id);
+  });
+
   ipcMain.handle("batch:upload", async (_event, rows) => {
     const actor = requireActor();
     const cfg = { ...loadConfig(), operatorName: actor?.name || loadConfig().operatorName };
@@ -266,6 +278,24 @@ function registerIpc() {
         ? (lock) => supabaseCoordinationService.releaseOperationLock(cfg, lock?.id)
         : null,
     });
+    
+    if (result.failures && result.failures.length > 0) {
+      const itemsToQuarantine = result.failures.map(f => ({
+        artId: f.id,
+        artName: f.fileName || `ID ${f.id}`,
+        driveFolderId: f.driveFolderId || null,
+        files: [{
+          localPath: f.localPath,
+          fileName: f.fileName,
+          error: f.error
+        }]
+      }));
+      quarantineService.addToQuarantine(cfg, itemsToQuarantine);
+      result.quarantinedFiles = itemsToQuarantine;
+    } else {
+      result.quarantinedFiles = [];
+    }
+
     auditService.record(loadConfig(), actor, "OPERADOR", "UPLOAD_LOTE", `sucessos=${result.successes.length}, falhas=${result.failures.length}`);
     return result;
   });

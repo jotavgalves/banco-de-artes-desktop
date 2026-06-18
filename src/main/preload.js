@@ -52,4 +52,6 @@ contextBridge.exposeInMainWorld("artBank", {
   auditList: () => ipcRenderer.invoke("audit:list"),
   runSync: () => ipcRenderer.invoke("sync:run"),
   openExternal: (url) => ipcRenderer.invoke("app:open-external", url),
+  listQuarantine: () => ipcRenderer.invoke("quarantine:list"),
+  removeFromQuarantine: (id) => ipcRenderer.invoke("quarantine:remove", id),
 });

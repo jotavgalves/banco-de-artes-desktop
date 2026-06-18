@@ -23,42 +23,47 @@ async function boot() {
 
     startHeartbeat();
     showView("artworks", "Banco de Artes");
-    refreshArtworks({ force: true });
-    refreshDashboardData();
+
+    // Start background sync without awaiting so UI renders immediately
+    initialDataLoad();
   } else {
     renderLoginMode();
   }
-
-  
-  state.cache = await window.artBank.runSync().catch(() => state.cache);
 }
+
+async function initialDataLoad() {
+  const syncBtnSpan = $("#forceSyncButton span");
+  if (syncBtnSpan) syncBtnSpan.textContent = "Sincronizando...";
+  
+  // Sincroniza dados em paralelo e silenciosamente
+  try {
+    state.cache = await window.artBank.runSync().catch(() => state.cache);
+    await Promise.allSettled([
+      refreshUsers(),
+      refreshArtworks().then(() => refreshDashboardData()),
+      refreshReservations(),
+      refreshDriveFolders(),
+      typeof refreshOrders === 'function' ? refreshOrders() : Promise.resolve(),
+      refreshPresence()
+    ]);
+  } finally {
+    if (syncBtnSpan) syncBtnSpan.textContent = "Sincronizar dados";
+  }
+}
+
 
 function bindNavigation() {
   $$(".nav-item").forEach((button) => {
-    button.addEventListener("click", async () => {
+    button.addEventListener("click", () => {
       const view = button.dataset.view;
       showView(view, button.querySelector("span:last-child").textContent.trim());
-      if (view === "artworks") {
-        await refreshArtworks({ force: true, showLoading: true });
-        await refreshDashboardData();
-      }
+      
       if (view === "batch") {
-        toast("Sincronizando cache...");
-        state.cache = await window.artBank.runSync().catch(() => state.cache);
-        if (state.rows.length) {
+        window.artBank.runSync().then(c => { state.cache = c; }).catch(e => console.error(e));
+        if (state.rows && state.rows.length) {
            state.rows.forEach(r => r.valid = validateRowLocal(r));
            renderRows();
         }
-      }
-      if (view === "drive") {
-        await refreshDriveFolders(false);
-      }
-      if (view === "finance") {
-        await refreshFinanceClients();
-        await refreshFinancePreview();
-      }
-      if (view === "audit") {
-        if (typeof refreshAudit === "function") await refreshAudit();
       }
     });
   });
@@ -210,6 +215,19 @@ function showView(view, title) {
   if ($("#viewEyebrow")) $("#viewEyebrow").textContent = title;
   $("#viewTitle").textContent = titles[view] || title;
   if ($("#viewSubtitle")) $("#viewSubtitle").textContent = subtitles[view] || "Visão operacional do Banco de Artes.";
+
+  // Auto-refresh silent trigger for views
+  if (view === "users") refreshUsers();
+  else if (view === "artworks") refreshArtworks();
+  else if (view === "drive") refreshDriveFolders();
+  else if (view === "reservations") refreshReservations();
+  else if (view === "finance") {
+    if (typeof refreshFinanceClients === "function") refreshFinanceClients();
+    if (typeof refreshFinancePreview === "function") refreshFinancePreview();
+  }
+  else if (view === "audit") {
+    if (typeof refreshAudit === "function") refreshAudit();
+  }
 }
 
 async function refreshAll() {
