@@ -332,10 +332,21 @@ function startHeartbeat() {
   clearInterval(startHeartbeat.timer);
   window.artBank.heartbeat(currentViewName()).then(refreshPresence).catch(() => null);
   startHeartbeat.timer = setInterval(async () => {
-    await window.artBank.heartbeat(currentViewName());
-    await refreshPresence();
-    await refreshReservations();
-  }, 30000);
+    const view = currentViewName();
+    await window.artBank.heartbeat(view);
+    
+    // Global continuous refreshes
+    if (typeof refreshPresence === "function") await refreshPresence();
+    if (typeof refreshReservations === "function") await refreshReservations();
+
+    // Contextual continuous refreshes based on active tab
+    if (view === "users") {
+      if (typeof refreshUsers === "function") await refreshUsers();
+      if (typeof refreshLocks === "function") await refreshLocks();
+    } else if (view === "audit") {
+      if (typeof refreshAudit === "function") await refreshAudit();
+    }
+  }, 15000);
 }
 
 function currentViewName() {
