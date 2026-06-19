@@ -1,0 +1,31 @@
+
+.error-block {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: center !important;
+  text-align: center !important;
+  padding: 40px 24px !important;
+  border: 1px dashed var(--line) !important;
+  border-radius: 18px !important;
+  background: #fff !important;
+  gap: 12px !important;
+  min-height: 200px !important;
+}
+.error-block svg {
+  width: 32px !important;
+  height: 32px !important;
+  fill: rgba(220, 38, 38, 0.7) !important; /* #dc2626 com opacidade */
+  margin-bottom: 4px !important;
+}
+.error-block strong {
+  color: rgba(220, 38, 38, 0.8) !important;
+  font-size: 16px !important;
+  font-weight: 800 !important;
+}
+.error-block span {
+  color: var(--text-2, #6b7280) !important;
+  font-size: 13px !important;
+  max-width: 300px !important;
+  margin-bottom: 8px !important;
+}

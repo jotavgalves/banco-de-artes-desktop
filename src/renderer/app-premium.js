@@ -153,6 +153,7 @@ function bindActions() {
     $("#submitBatchButton")?.addEventListener("click", uploadBatch);
     $("#runPanel50Button")?.addEventListener("click", runPanel50Automation);
     $("#choosePanel50Input")?.addEventListener("click", choosePanel50Input);
+    $("#panel50ProductFilter")?.addEventListener("change", revalidateBatchForProductTarget);
     $("#panel50InputFolder")?.addEventListener("input", updatePanel50ThemePreview);
     $("#panel50Theme")?.addEventListener("input", () => {
       state.panel50ThemeTouched = true;
@@ -1765,16 +1766,23 @@ function status(row) {
   return `<span class="state-pill error" title="${escapeHtml(row.errors?.join("; ") || "Pendente")}">REVER</span>`;
 }
 
-async function validateRows() {
+async function validateRows(options = {}) {
+  const forceScan = options?.forceScan === true;
   setBusy("Lendo e validando lote...");
   const button = $("#validateRowsButton");
+  const folderButton = $("#choosePanel50Input");
+  const productSelect = $("#panel50ProductFilter");
   const original = button?.textContent || "Validar lote";
+  const folderButtonWasDisabled = Boolean(folderButton?.disabled);
+  const productSelectWasDisabled = Boolean(productSelect?.disabled);
   if (button) {
     button.disabled = true;
     button.textContent = "Validando...";
   }
+  if (folderButton) folderButton.disabled = true;
+  if (productSelect) productSelect.disabled = true;
   try {
-    if (state.mode === "standard" || !state.rows.length) {
+    if (forceScan || state.mode === "standard" || !state.rows.length) {
       const folders = selectedBatchFolders();
       if (!folders.length) {
         state.rows = [];
@@ -1784,45 +1792,20 @@ async function validateRows() {
         toast(message);
         return;
       }
-      const rawFiles = await window.artBank.scanImages(folders);
       const productFilter = document.getElementById("panel50ProductFilter")?.value;
-      
-      if (productFilter) {
-        const validFiles = [];
-        const invalidNames = [];
-        
-        for (const file of rawFiles) {
-          let isValid = false;
-          if (file.dimensions && file.dimensions.widthCm && file.dimensions.heightCm) {
-            const w = file.dimensions.widthCm;
-            const h = file.dimensions.heightCm;
-            
-            if (productFilter === "bolinha") {
-              if (w >= 57 && w <= 59 && h >= 57 && h <= 59) isValid = true;
-            } else if (productFilter === "painel_150") {
-              const validHeight = h >= 157 && h <= 159;
-              const validWidth = (w >= 157 && w <= 159) || (w >= 162 && w <= 164);
-              if (validHeight && validWidth) isValid = true;
-            } else {
-              isValid = true;
-            }
-          }
-          
-          if (isValid) {
-            validFiles.push(file);
-          } else {
-            invalidNames.push(file.name);
-          }
-        }
-        
-        if (invalidNames.length > 0) {
-          alert(`Atenção: Havia na pasta ${invalidNames.length} arquivo(s) com medidas diferentes do público-alvo selecionado e eles foram ignorados:\n\n${invalidNames.join("\n")}`);
-        }
-        
-        state.files = validFiles;
-      } else {
-        state.files = rawFiles;
+      const scanResult = productFilter
+        ? await window.artBank.scanImages({ folders, target: productFilter })
+        : await window.artBank.scanImages(folders);
+      state.files = productFilter ? scanResult.files : scanResult;
+
+      if (productFilter && scanResult.rejected.length) {
+        window.showWarningModal?.({
+          title: "Arquivos ignorados",
+          message: `Havia ${scanResult.rejected.length} arquivo(s) diferente(s) do público-alvo selecionado. Eles foram ignorados e não receberão ID.`,
+          files: scanResult.rejected,
+        });
       }
+
       if (!state.files.length) {
         state.rows = [];
         renderRows();
@@ -1853,6 +1836,8 @@ async function validateRows() {
       button.disabled = false;
       button.textContent = original;
     }
+    if (folderButton) folderButton.disabled = folderButtonWasDisabled;
+    if (productSelect) productSelect.disabled = productSelectWasDisabled;
     clearBusy();
   }
 }
@@ -1870,13 +1855,42 @@ async function uploadOne(index) {
 }
 
 async function choosePanel50Input() {
-  const folder = await window.artBank.chooseImageFolder();
-  if (folder && $("#panel50InputFolder")) {
-    $("#panel50InputFolder").value = folder;
-    clearBatch();
-    setBatchActionStatus("Pasta selecionada. Clique em Validar lote para carregar as artes.");
-    updatePanel50ThemePreview();
+  const button = $("#choosePanel50Input");
+  if (!button || button.dataset.folderPickerOpen === "true") return;
+  button.dataset.folderPickerOpen = "true";
+  button.disabled = true;
+  try {
+    const folder = await window.artBank.chooseImageFolder();
+    if (folder && $("#panel50InputFolder")) {
+      $("#panel50InputFolder").value = folder;
+      clearBatch();
+      updatePanel50ThemePreview();
+      setBatchActionStatus("Pasta selecionada. Validando lote...");
+      await waitForFolderPickerToClose();
+      await validateRows({ forceScan: true });
+    }
+  } finally {
+    delete button.dataset.folderPickerOpen;
+    button.disabled = false;
   }
+}
+
+async function waitForFolderPickerToClose() {
+  window.focus();
+  await new Promise((resolve) => {
+    requestAnimationFrame(() => setTimeout(resolve, 180));
+  });
+}
+
+async function revalidateBatchForProductTarget() {
+  if (!selectedBatchFolders().length) {
+    clearBatch();
+    setBatchActionStatus("Escolha uma pasta para validar o público-alvo.");
+    return;
+  }
+  clearBatch();
+  setBatchActionStatus("Público-alvo alterado. Validando lote...");
+  await validateRows({ forceScan: true });
 }
 
 async function choosePanel50Mockup() {

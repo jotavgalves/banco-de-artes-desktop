@@ -86,6 +86,7 @@ function bindActions() {
     $("#submitBatchButton")?.addEventListener("click", uploadBatch);
     $("#runPanel50Button")?.addEventListener("click", runPanel50Automation);
     $("#choosePanel50Input")?.addEventListener("click", choosePanel50Input);
+    $("#panel50ProductFilter")?.addEventListener("change", revalidateBatchForProductTarget);
     $("#panel50InputFolder")?.addEventListener("input", updatePanel50ThemePreview);
     $("#panel50Theme")?.addEventListener("input", () => {
       state.panel50ThemeTouched = true;

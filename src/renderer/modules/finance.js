@@ -367,15 +367,6 @@ async function copyFinanceOrder() {
   }
 }
 
-// Start the application boot process when all modules are loaded.
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', () => {
-    if (typeof boot === 'function') boot();
-  });
-} else {
-  if (typeof boot === 'function') boot();
-}
-
 window.refreshQuarantineBadge = async function() {
   try {
     const list = await window.artBank.listQuarantine();

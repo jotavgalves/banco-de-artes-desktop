@@ -14,7 +14,6 @@ const googleService = require("./googleService");
 const userService = require("./userService");
 const auditService = require("./auditService");
 const quarantineService = require("./quarantineService");
-const errorLogService = require("./errorLogService");
 const { parseArtworkFilename, validateBatchRows } = require("../shared/rules");
 const syncService = require("./syncService");
 const photoshopService = require("./photoshopService");

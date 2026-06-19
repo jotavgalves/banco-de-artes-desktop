@@ -194,16 +194,23 @@ function status(row) {
   return `<span class="state-pill review" title="${escapeHtml(row.errors?.join("; ") || "Pendente")}">Revisar</span>`;
 }
 
-async function validateRows() {
+async function validateRows(options = {}) {
+  const forceScan = options?.forceScan === true;
   setBusy("Lendo e validando lote...");
   const button = $("#validateRowsButton");
+  const folderButton = $("#choosePanel50Input");
+  const productSelect = $("#panel50ProductFilter");
   const original = button?.textContent || "Validar lote";
+  const folderButtonWasDisabled = Boolean(folderButton?.disabled);
+  const productSelectWasDisabled = Boolean(productSelect?.disabled);
   if (button) {
     button.disabled = true;
     button.textContent = "Validando...";
   }
+  if (folderButton) folderButton.disabled = true;
+  if (productSelect) productSelect.disabled = true;
   try {
-    if (state.mode === "standard" || !state.rows.length) {
+    if (forceScan || state.mode === "standard" || !state.rows.length) {
       const folders = selectedBatchFolders();
       if (!folders.length) {
         state.rows = [];
@@ -220,7 +227,7 @@ async function validateRows() {
       state.files = productFilter ? scanResult.files : scanResult;
 
       if (productFilter && scanResult.rejected.length) {
-        showWarningModal({
+        window.showWarningModal?.({
           title: "Arquivos ignorados",
           message: `Havia ${scanResult.rejected.length} arquivo(s) diferente(s) do público-alvo selecionado. Eles foram ignorados e não receberão ID.`,
           files: scanResult.rejected,
@@ -259,6 +266,8 @@ async function validateRows() {
       button.disabled = false;
       button.textContent = original;
     }
+    if (folderButton) folderButton.disabled = folderButtonWasDisabled;
+    if (productSelect) productSelect.disabled = productSelectWasDisabled;
     clearBusy();
   }
 }
@@ -270,13 +279,42 @@ async function uploadBatch() {
 }
 
 async function choosePanel50Input() {
-  const folder = await window.artBank.chooseImageFolder();
-  if (folder && $("#panel50InputFolder")) {
-    $("#panel50InputFolder").value = folder;
-    clearBatch();
-    setBatchActionStatus("Pasta selecionada. Clique em Validar lote para carregar as artes.");
-    updatePanel50ThemePreview();
+  const button = $("#choosePanel50Input");
+  if (!button || button.dataset.folderPickerOpen === "true") return;
+  button.dataset.folderPickerOpen = "true";
+  button.disabled = true;
+  try {
+    const folder = await window.artBank.chooseImageFolder();
+    if (folder && $("#panel50InputFolder")) {
+      $("#panel50InputFolder").value = folder;
+      clearBatch();
+      updatePanel50ThemePreview();
+      setBatchActionStatus("Pasta selecionada. Validando lote...");
+      await waitForFolderPickerToClose();
+      await validateRows({ forceScan: true });
+    }
+  } finally {
+    delete button.dataset.folderPickerOpen;
+    button.disabled = false;
   }
+}
+
+async function waitForFolderPickerToClose() {
+  window.focus();
+  await new Promise((resolve) => {
+    requestAnimationFrame(() => setTimeout(resolve, 180));
+  });
+}
+
+async function revalidateBatchForProductTarget() {
+  if (!selectedBatchFolders().length) {
+    clearBatch();
+    setBatchActionStatus("Escolha uma pasta para validar o público-alvo.");
+    return;
+  }
+  clearBatch();
+  setBatchActionStatus("Público-alvo alterado. Validando lote...");
+  await validateRows({ forceScan: true });
 }
 
 async function choosePanel50Mockup() {

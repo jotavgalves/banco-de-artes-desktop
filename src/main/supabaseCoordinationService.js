@@ -36,40 +36,45 @@ async function reserveIds(config = {}, payload = {}, actor = null) {
   const count = Number(payload.count);
   if (!Number.isInteger(count) || count < 1 || count > 500) throw new Error("Quantidade inválida.");
 
-  const used = await usedArtworkIds(supabase);
-  const active = await activeReservationRows(supabase);
-  const busy = new Set(active.flatMap((item) => item.ids || []).map(Number).filter(Number.isFinite));
-  const blocked = new Set([...used, ...busy]);
-  let start = Number(payload.start);
-  if (!Number.isInteger(start) || start < 1) start = nextAvailableStart(blocked, count);
-  const ids = Array.from({ length: count }, (_, index) => start + index);
+  const lock = await acquireOperationLock(config, "RESERVA_ID", 1);
+  try {
+    const used = await usedArtworkIds(supabase);
+    const active = await activeReservationRows(supabase);
+    const busy = new Set(active.flatMap((item) => item.ids || []).map(Number).filter(Number.isFinite));
+    const blocked = new Set([...used, ...busy]);
+    let start = Number(payload.start);
+    if (!Number.isInteger(start) || start < 1) start = nextAvailableStart(blocked, count);
+    const ids = Array.from({ length: count }, (_, index) => start + index);
 
-  const busyConflict = ids.find((id) => busy.has(id));
-  if (busyConflict) throw new Error(`ID ${busyConflict} já está reservado.`);
-  const usedConflict = ids.find((id) => used.has(id));
-  if (usedConflict) throw new Error(`ID ${usedConflict} já existe no Supabase.`);
+    const busyConflict = ids.find((id) => busy.has(id));
+    if (busyConflict) throw new Error(`ID ${busyConflict} já está reservado.`);
+    const usedConflict = ids.find((id) => used.has(id));
+    if (usedConflict) throw new Error(`ID ${usedConflict} já existe no Supabase.`);
 
-  const minutes = Number(config.reservationTtlMinutes) || 5;
-  const expiresAt = new Date(Date.now() + minutes * 60 * 1000).toISOString();
-  const { data, error } = await supabase
-    .from("id_reservations")
-    .insert({
-      owner_id: profile.id,
-      machine_id: os.hostname(),
-      range_start: ids[0],
-      range_end: ids[ids.length - 1],
-      ids,
-      status: "active",
-      expires_at: expiresAt,
-    })
-    .select("id,ids,range_start,range_end,status,machine_id,expires_at,created_at,owner_id")
-    .single();
-  if (error) throw new Error(error.message);
-  return {
-    ...reservationFromRow({ ...data, profiles: { login: actor?.login || profile.login, display_name: actor?.name || profile.display_name } }),
-    label: payload.label?.trim() || `Reserva ${ids[0]}-${ids[ids.length - 1]}`,
-    provider: "supabase",
-  };
+    const minutes = Number(config.reservationTtlMinutes) || 5;
+    const expiresAt = new Date(Date.now() + minutes * 60 * 1000).toISOString();
+    const { data, error } = await supabase
+      .from("id_reservations")
+      .insert({
+        owner_id: profile.id,
+        machine_id: os.hostname(),
+        range_start: ids[0],
+        range_end: ids[ids.length - 1],
+        ids,
+        status: "active",
+        expires_at: expiresAt,
+      })
+      .select("id,ids,range_start,range_end,status,machine_id,expires_at,created_at,owner_id")
+      .single();
+    if (error) throw new Error(error.message);
+    return {
+      ...reservationFromRow({ ...data, profiles: { login: actor?.login || profile.login, display_name: actor?.name || profile.display_name } }),
+      label: payload.label?.trim() || `Reserva ${ids[0]}-${ids[ids.length - 1]}`,
+      provider: "supabase",
+    };
+  } finally {
+    await releaseOperationLock(config, lock?.id).catch(() => null);
+  }
 }
 
 async function releaseReservation(config = {}, reservationId = "") {
@@ -144,7 +149,8 @@ async function acquireOperationLock(config = {}, operationType = "CADASTRO_ARTE"
   const busy = active?.[0];
   if (busy) {
     const busyProfile = Array.isArray(busy.profiles) ? busy.profiles[0] : busy.profiles;
-    throw new Error(`Existe outro cadastro em andamento por ${busyProfile?.display_name || busyProfile?.login || "outro usuário"}.`);
+    const opName = operationType === "CADASTRO_ARTE" ? "cadastro" : "operação";
+    throw new Error(`Existe outr${opName === 'cadastro' ? 'o' : 'a'} ${opName} em andamento por ${busyProfile?.display_name || busyProfile?.login || "outro usuário"}.`);
   }
 
   const expiresAt = new Date(Date.now() + (Number(ttlMinutes) || 15) * 60 * 1000).toISOString();
