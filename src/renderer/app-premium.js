@@ -1435,34 +1435,136 @@ async function openArtworkLocation(type) {
   }
 }
 
+function showLocalBackupPickerModal(files) {
+  return new Promise((resolve) => {
+    const modal = document.createElement("div");
+    modal.className = "modal premium-modal is-open";
+    modal.style.zIndex = "108";
+    
+    const card = document.createElement("div");
+    card.className = "modal-card";
+    card.style.cssText = "max-width: 800px; width: 90%; max-height: 85vh; display: flex; flex-direction: column; padding: 0;";
+    
+    const header = document.createElement("div");
+    header.className = "modal-toolbar";
+    header.style.padding = "24px";
+    header.innerHTML = `
+      <div>
+        <p class="eyebrow">Ação requerida</p>
+        <strong style="font-size: 20px;">Selecione a Imagem Correta</strong>
+      </div>
+    `;
+    
+    const content = document.createElement("div");
+    content.style.cssText = "overflow-y: auto; padding: 0 24px 24px 24px; flex: 1;";
+    const grid = document.createElement("div");
+    grid.style.cssText = "display:grid;grid-template-columns:repeat(auto-fill, minmax(140px, 1fr));gap:16px;";
+    
+    files.forEach(file => {
+      const item = document.createElement("div");
+      item.style.cssText = "cursor:pointer;background:var(--surface-2);border-radius:18px;padding:8px;text-align:center;transition:all 0.18s;border:2px solid transparent;display:flex;flex-direction:column;box-shadow:0 10px 22px rgba(34,33,36,0.035);";
+      item.onmouseover = () => { item.style.borderColor = "var(--primary)"; item.style.transform = "translateY(-2px)"; };
+      item.onmouseout = () => { item.style.borderColor = "transparent"; item.style.transform = "none"; };
+      
+      const img = document.createElement("img");
+      img.src = file.previewUrl || file.path; 
+      img.style.cssText = "width:100%;aspect-ratio:1;object-fit:cover;border-radius:12px;margin-bottom:8px;background:linear-gradient(135deg,#f8fafc,#eefdff);";
+      
+      const name = document.createElement("div");
+      name.textContent = file.name;
+      name.style.cssText = "font-size:12px;color:var(--text-2);word-break:break-word;line-height:1.2;font-weight:700;";
+      
+      item.appendChild(img);
+      item.appendChild(name);
+      
+      item.onclick = () => {
+        document.body.removeChild(modal);
+        resolve(file);
+      };
+      
+      grid.appendChild(item);
+    });
+    
+    content.appendChild(grid);
+    
+    const actions = document.createElement("div");
+    actions.className = "confirm-actions";
+    actions.style.padding = "16px 24px";
+    actions.style.borderTop = "1px solid var(--line)";
+    
+    const cancelBtn = document.createElement("button");
+    cancelBtn.className = "secondary-button";
+    cancelBtn.textContent = "Cancelar";
+    cancelBtn.onclick = () => {
+      document.body.removeChild(modal);
+      resolve(null);
+    };
+    
+    actions.appendChild(cancelBtn);
+    
+    card.appendChild(header);
+    card.appendChild(content);
+    card.appendChild(actions);
+    modal.appendChild(card);
+    
+    document.body.appendChild(modal);
+  });
+}
+
 async function refreshArtworkUrl(id, allowUpload = false) {
   const art = state.artworks.find((item) => String(item.id) === String(id));
   if (!art) return toast(`Arte ${id} não encontrada na tabela.`);
   const button = $(`[data-refresh-art-url="${CSS.escape(String(id))}"]`);
   try {
-    startActionProgress(`Atualizando thumb ${id}`, allowUpload ? "Subindo arquivo e gravando URL." : "Procurando imagem no Drive.", 12);
+    startActionProgress(`Atualizando thumb ${id}`, "Procurando imagem no backup local.", 12);
     if (button) {
       button.disabled = true;
       button.classList.add("is-loading");
     }
-    updateActionProgress(38, "Consultando Drive.");
-    const result = await window.artBank.refreshArtworkUrl({ ...art, allowUpload });
-    if (result.needsUpload) {
-      finishActionProgress("Imagem não encontrada no Drive.");
-      const confirmed = await confirmAction({
-        title: "Imagem não encontrada no Drive",
-        message: `${result.message} Posso subir o arquivo local correspondente e atualizar a base oficial?`,
-      });
-      if (!confirmed) return;
-      return refreshArtworkUrl(id, true);
+
+    updateActionProgress(38, "Pesquisando pastas locais.");
+    
+    // NOVO FLUXO: Busca local primeiro
+    let localFiles = [];
+    try {
+      localFiles = await window.artBank.findLocalBackup({ id: art.id, theme: art.theme });
+    } catch (err) {
+      finishActionProgress("Pasta não encontrada.");
+      return toast(friendlyError(err.message));
     }
+
+    if (!localFiles || localFiles.length === 0) {
+      finishActionProgress("Pasta vazia.");
+      return toast(`Pasta encontrada, mas nenhuma imagem de arte válida dentro dela (ID: ${id}).`);
+    }
+
+    let selectedFile = localFiles[0];
+    if (localFiles.length > 1) {
+      finishActionProgress("Aguardando seleção de imagem.");
+      selectedFile = await showLocalBackupPickerModal(localFiles);
+      if (!selectedFile) {
+        toast("Seleção cancelada.");
+        return;
+      }
+      startActionProgress(`Enviando thumb ${id}`, "Fazendo upload da imagem selecionada.", 50);
+    } else {
+      updateActionProgress(50, "Enviando arquivo único encontrado.");
+    }
+
+    const result = await window.artBank.uploadFromBackup({ ...art, localImagePath: selectedFile.path });
+
+    // Força o cache-busting para garantir que o <img> re-renderize
+    const timestamp = new Date().getTime();
+    if (result.url) result.url = `${result.url}${result.url.includes('?') ? '&' : '?'}t=${timestamp}`;
+    if (result.drive_url) result.drive_url = `${result.drive_url}${result.drive_url.includes('?') ? '&' : '?'}t=${timestamp}`;
+
     updateActionProgress(72, "Atualizando visualização e cache.");
     state.artworks = state.artworks.map((item) => String(item.id) === String(id) ? { ...item, ...result } : item);
     state.brokenArtworkImageIds.delete(String(id));
     state.cache = await window.artBank.runSync().catch(() => state.cache);
     renderFilteredArtworks();
     finishActionProgress("Thumb atualizada.");
-    toast(result.uploaded ? `Arte ${id} enviada ao Drive e atualizada.` : `URL da arte ${id} atualizada.`);
+    toast(`Thumb da arte ${id} atualizada com sucesso pelo backup local!`);
   } catch (error) {
     finishActionProgress("Falha ao atualizar thumb.");
     toast(friendlyError(error.message));

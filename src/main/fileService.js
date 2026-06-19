@@ -177,6 +177,80 @@ async function openArtworkFolder(config, type, id) {
   return { ok: true, folder };
 }
 
+async function findLocalBackupImages(config, id, theme) {
+  const root = String(config.panel50DriveLocalRoot || "X:\\2 - DRIVE").trim();
+  if (!fs.existsSync(root)) throw new Error(`Diretório raiz não encontrado: ${root}`);
+
+  const targetId = String(id || "").trim();
+  const targetTheme = String(theme || "").trim();
+  if (!targetId) throw new Error("ID não informado.");
+
+  const compareStr = (a, b) => String(a || "").trim().toLowerCase() === String(b || "").trim().toLowerCase();
+  
+  let idFolder = null;
+
+  // Tentativa rápida
+  const quickPath = path.join(root, targetTheme, targetId);
+  if (fs.existsSync(quickPath)) {
+    const stat = fs.statSync(quickPath);
+    if (stat.isDirectory()) {
+      idFolder = quickPath;
+    }
+  }
+
+  // Fallback (1º nível)
+  if (!idFolder) {
+    const entries = fs.readdirSync(root, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      if (compareStr(entry.name, targetTheme)) {
+        const potentialPath = path.join(root, entry.name, targetId);
+        if (fs.existsSync(potentialPath) && fs.statSync(potentialPath).isDirectory()) {
+          idFolder = potentialPath;
+          break;
+        }
+      }
+    }
+    
+    // Se ainda não encontrou iterando os nomes parecidos com o Tema, vamos olhar TODOS os temas
+    if (!idFolder) {
+      for (const entry of entries) {
+        if (!entry.isDirectory()) continue;
+        const potentialPath = path.join(root, entry.name, targetId);
+        if (fs.existsSync(potentialPath) && fs.statSync(potentialPath).isDirectory()) {
+          idFolder = potentialPath;
+          break;
+        }
+      }
+    }
+  }
+
+  if (!idFolder) {
+    throw new Error(`Pasta da arte não encontrada no backup local (ID: ${targetId}).`);
+  }
+
+  const extensions = new Set([".jpg", ".jpeg", ".jpe", ".png", ".webp", ".tif", ".tiff"]);
+  const files = [];
+  
+  for (const entry of fs.readdirSync(idFolder, { withFileTypes: true })) {
+    if (!entry.isFile() || isSystemEntry(entry.name)) continue;
+    const ext = path.extname(entry.name).toLowerCase();
+    if (!extensions.has(ext)) continue;
+
+    const fullPath = path.join(idFolder, entry.name);
+    const previewUrl = await thumbnailForFile(fullPath, ext);
+    
+    files.push({
+      path: fullPath,
+      name: entry.name,
+      extension: ext,
+      previewUrl,
+    });
+  }
+
+  return files;
+}
+
 module.exports = {
   listCandidateImages,
   filterCandidateImagesByTarget,
@@ -186,4 +260,5 @@ module.exports = {
   containsArtworkId,
   findFolderByArtworkId,
   openArtworkFolder,
+  findLocalBackupImages,
 };

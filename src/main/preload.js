@@ -47,6 +47,8 @@ contextBridge.exposeInMainWorld("artBank", {
   listArtworks: () => ipcRenderer.invoke("artworks:list"),
   updateArtwork: (payload) => ipcRenderer.invoke("artworks:update", payload),
   refreshArtworkUrl: (payload) => ipcRenderer.invoke("artworks:refresh-url", payload),
+  findLocalBackup: (payload) => ipcRenderer.invoke("artworks:find-local-backup", payload),
+  uploadFromBackup: (payload) => ipcRenderer.invoke("artworks:upload-from-backup", payload),
   deleteArtwork: (payload) => ipcRenderer.invoke("artworks:delete", payload),
   lockStatus: () => ipcRenderer.invoke("locks:status"),
   auditList: () => ipcRenderer.invoke("audit:list"),

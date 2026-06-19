@@ -1162,6 +1162,71 @@ async function verifyDriveFiles(config, appRoot, refs = []) {
   return results;
 }
 
+async function uploadArtworkFromBackup(config, appRoot, payload = {}, options = {}) {
+  const { drive } = await services(config, appRoot);
+  const id = String(payload.id || "").trim();
+  const localImagePath = payload.localImagePath;
+  if (!fs.existsSync(localImagePath)) {
+    throw new Error("Arquivo local não encontrado para upload: " + localImagePath);
+  }
+
+  const art = {
+    id,
+    theme: normalizeText(payload.theme || ""),
+    product: normalizeText(payload.product || ""),
+    size: normalizeDimension(payload.size || ""),
+    client: normalizeText(payload.client || ""),
+    user: normalizeText(payload.user || ""),
+    phone: payload.phone || "",
+    date: payload.date || "",
+  };
+
+  const rootFolderName = getRootFolderName(config, art.product, art.size);
+  const rootFolderId = await findOrCreateFolder(drive, rootFolderName);
+  const themeFolderId = await getThemeFolderId(config, drive, rootFolderId, art.theme || "Sem tema");
+  
+  let targetFolderId = themeFolderId;
+  if (rootFolderName !== (config.driveFolderBolinhas || "BOLINHAS 50X50")) {
+    const productFolderName = getProductFolderName(art.product, art.size);
+    targetFolderId = await findOrCreateFolder(drive, productFolderName, themeFolderId);
+  }
+
+  const fileName = buildArtworkFilename({
+    id,
+    theme: art.theme,
+    product: art.product,
+    size: art.size,
+    extension: path.extname(localImagePath) || ".jpg",
+  });
+
+  const result = await drive.files.create({
+    requestBody: { name: fileName, parents: [targetFolderId] },
+    media: { mimeType: mimeTypeForFile(localImagePath), body: fs.createReadStream(localImagePath) },
+    fields: "id,name,webViewLink,webContentLink",
+  });
+
+  if (config.publicDriveUploads) {
+    await drive.permissions.create({
+      fileId: result.data.id,
+      requestBody: { type: "anyone", role: "reader" },
+    }).catch(() => null);
+  }
+
+  if (typeof options.persistArtwork !== "function") {
+    throw new Error("Upload oficial requer persistência no banco. O Supabase não está configurado ou não pode ser gravado.");
+  }
+
+  const found = result.data;
+  const url = found.webViewLink || found.webContentLink || `https://drive.google.com/file/d/${found.id}/view`;
+  
+  const persistPayload = { ...art, url, drive_url: url, driveFileId: found.id, fileName: found.name };
+  console.log("PAYLOAD INDO PARA PERSISTARTWORK:", persistPayload);
+
+  const updated = await options.persistArtwork(persistPayload);
+    
+  return { ok: true, uploaded: true, file: found, ...updated, url };
+}
+
 function escapeQuery(value) {
   return String(value).replace(/'/g, "\\'");
 }
@@ -1206,6 +1271,7 @@ module.exports = {
   nextAvailableArtworkIds,
   updateArtwork,
   refreshArtworkUrlFromDrive,
+  uploadArtworkFromBackup,
   deleteArtwork,
   lockStatus,
   testConnectivity,

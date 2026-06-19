@@ -92,24 +92,38 @@ async function updateArtwork(config = {}, payload = {}) {
   const supabase = client(config);
   const profile = supabaseAuthService.current()?.profile;
   const next = {
-    theme: normalizeText(payload.theme),
-    product: normalizeText(payload.product),
-    size: normalizeDimension(payload.size),
-    client: normalizeText(payload.client),
-    phone: String(payload.phone || "").trim(),
-    drive_url: String(payload.url || payload.drive_url || "").trim(),
     updated_by: profile?.id || null,
     updated_at: new Date().toISOString(),
   };
-  const { data, error } = await supabase
+
+  if ("theme" in payload) next.theme = normalizeText(payload.theme);
+  if ("product" in payload) next.product = normalizeText(payload.product);
+  if ("size" in payload) next.size = normalizeDimension(payload.size);
+  if ("client" in payload) next.client = normalizeText(payload.client);
+  if ("phone" in payload) next.phone = String(payload.phone || "").trim();
+  if ("status" in payload) next.status = payload.status;
+  
+  if ("url" in payload || "drive_url" in payload) {
+    next.drive_url = String(payload.url || payload.drive_url || "").trim();
+  }
+  const response = await supabase
     .from("artworks")
     .update(next)
     .eq("id", id)
-    .select("id,theme,product,size,client,phone,created_at,updated_at,status,drive_url,metadata")
-    .single();
-  if (error) throw new Error(error.message);
+    .select("id,theme,product,size,client,phone,created_at,updated_at,status,drive_url,metadata");
+
+  console.log("SUPABASE UPDATE RESULT:", { id, next, response });
+
+  if (response.error) throw new Error(response.error.message);
+  
+  if (!response.data || response.data.length === 0) {
+    throw new Error(`Nenhuma linha foi atualizada no Supabase (ID ${id}) — verifique RLS ou se a arte existe.`);
+  }
+
+  const rowData = Array.isArray(response.data) ? response.data[0] : response.data;
+  
   await recordEvent(config, id, "artwork_updated", { fields: Object.keys(next) }).catch(() => null);
-  return artworkFromRow(data);
+  return artworkFromRow(rowData);
 }
 
 async function deleteArtwork(config = {}, payload = {}) {

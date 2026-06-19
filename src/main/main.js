@@ -8,6 +8,7 @@ const {
   chooseImageFolder,
   chooseMockupFile,
   openArtworkFolder,
+  findLocalBackupImages,
 } = require("./fileService");
 const { buildProvisioningPlan } = require("./googleBlueprint");
 const googleService = require("./googleService");
@@ -489,6 +490,22 @@ function registerIpc() {
         : null,
     });
     auditService.record(loadConfig(), actor, "OPERADOR", "ATUALIZAR_URL_ARTE", `id=${payload.id}, uploaded=${Boolean(result.uploaded)}`);
+    return result;
+  });
+  ipcMain.handle("artworks:find-local-backup", async (_event, payload) => {
+    requireAdmin();
+    const config = loadConfig();
+    return await findLocalBackupImages(config, payload.id, payload.theme);
+  });
+  ipcMain.handle("artworks:upload-from-backup", async (_event, payload) => {
+    const actor = requireAdmin();
+    const config = loadConfig();
+    const result = await googleService.uploadArtworkFromBackup(config, app.getAppPath(), payload, {
+      persistArtwork: supabaseArtworkService.canWrite(config)
+        ? (artwork) => supabaseArtworkService.updateArtwork(config, artwork)
+        : null,
+    });
+    auditService.record(loadConfig(), actor, "OPERADOR", "UPLOAD_BACKUP_ARTE", `id=${payload.id}, file=${payload.localImagePath}`);
     return result;
   });
   ipcMain.handle("artworks:delete", async (_event, payload) => {

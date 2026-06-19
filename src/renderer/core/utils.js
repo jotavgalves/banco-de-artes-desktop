@@ -83,10 +83,13 @@ function resolveConfirm(value) {
   if (resolver) resolver(Boolean(value));
 }
 
-function friendlyError(message) {
-  let text = String(message || "");
+function friendlyError(error) {
+  let text = String((error && error.message) ? error.message : (error || "Erro desconhecido"));
   text = text.replace(/^Error invoking remote method '[^']+':\s*/i, "");
   text = text.replace(/^Error:\s*/i, "");
+  if (text.includes("No handler registered for")) {
+    return "Falha de comunicação (novo recurso detectado). Reinicie o aplicativo completamente (feche e abra novamente) para carregar o novo código do backend.";
+  }
   if (text.includes("Nenhuma imagem TIFF/JPG/PNG encontrada")) {
     return "Nenhuma imagem encontrada na pasta escolhida.";
   }
