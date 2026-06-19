@@ -87,12 +87,11 @@ function writeBootstrapFile(config) {
 
 function normalizeConfig(config) {
   const legacyPlaceholderFolder = (value) => /SKU\s*-\s*ATESTE$/i.test(String(value || "").trim());
-  const legacyPanelRoot = (value) => /PAINEIS REDONDOS 50 X 50[\\/]SKUPR50 - IMPRESSÃO$/i.test(String(value || "").trim());
   const supabaseReadModes = new Set(["supabase-readonly", "supabase"]);
   const supabaseAuthModes = new Set(["local", "hybrid", "supabase"]);
   return {
     ...config,
-    panel50SourceRoot: legacyPlaceholderFolder(config.panel50SourceRoot) || legacyPanelRoot(config.panel50SourceRoot) ? "" : config.panel50SourceRoot,
+    panel50SourceRoot: legacyPlaceholderFolder(config.panel50SourceRoot) ? "" : config.panel50SourceRoot,
     panel50LastInputFolder: legacyPlaceholderFolder(config.panel50LastInputFolder) ? "" : config.panel50LastInputFolder,
     supabaseEnabled: Boolean(config.supabaseEnabled),
     supabaseUrl: String(config.supabaseUrl || "").trim(),
