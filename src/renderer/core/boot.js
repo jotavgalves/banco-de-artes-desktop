@@ -216,18 +216,17 @@ function showView(view, title) {
   if ($("#viewEyebrow")) $("#viewEyebrow").textContent = title;
   $("#viewTitle").textContent = titles[view] || title;
   if ($("#viewSubtitle")) $("#viewSubtitle").textContent = subtitles[view] || "Visão operacional do Banco de Artes.";
-
-  // Auto-refresh silent trigger for views
-  if (view === "users") refreshUsers();
-  else if (view === "artworks") refreshArtworks();
-  else if (view === "drive") refreshDriveFolders();
-  else if (view === "reservations") refreshReservations();
-  else if (view === "finance") {
-    if (typeof refreshFinanceClients === "function") refreshFinanceClients();
-    if (typeof refreshFinancePreview === "function") refreshFinancePreview();
-  }
-  else if (view === "audit") {
+  if (view === "users") {
+    if (typeof refreshUsers === "function") refreshUsers();
+    if (typeof refreshLocks === "function") refreshLocks();
+  } else if (view === "reservations") {
+    if (typeof refreshReservations === "function") refreshReservations();
+  } else if (view === "audit") {
     if (typeof refreshAudit === "function") refreshAudit();
+  } else if (view === "finance") {
+    if (typeof refreshFinance === "function") refreshFinance();
+  } else if (view === "artworks") {
+    if (typeof refreshArtworks === "function" && $("#searchQuery") && !$("#searchQuery").value) refreshArtworks();
   }
 }
 

@@ -401,6 +401,19 @@ function showView(view, title) {
   if ($("#viewEyebrow")) $("#viewEyebrow").textContent = title;
   $("#viewTitle").textContent = titles[view] || title;
   if ($("#viewSubtitle")) $("#viewSubtitle").textContent = subtitles[view] || "Visão operacional do Banco de Artes.";
+
+  if (view === "users") {
+    if (typeof refreshUsers === "function") refreshUsers();
+    if (typeof refreshLocks === "function") refreshLocks();
+  } else if (view === "reservations") {
+    if (typeof refreshReservations === "function") refreshReservations();
+  } else if (view === "audit") {
+    if (typeof refreshAudit === "function") refreshAudit();
+  } else if (view === "finance") {
+    if (typeof refreshFinance === "function") refreshFinance();
+  } else if (view === "artworks") {
+    if (typeof refreshArtworks === "function" && $("#searchQuery") && !$("#searchQuery").value) refreshArtworks();
+  }
 }
 
 async function refreshAll() {
