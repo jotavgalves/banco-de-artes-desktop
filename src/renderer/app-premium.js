@@ -1641,13 +1641,14 @@ function renderRows() {
   });
 
   if (!filteredIndices.length && state.rows.length) {
-    if($("#batchRows")) $("#batchRows").innerHTML = `<tr><td colspan="8" style="text-align:center;padding:16px;color:var(--text-3)">Nenhuma arte no lote corresponde.</td></tr>`;
+    if($("#batchRows")) $("#batchRows").innerHTML = `<tr><td colspan="9" style="text-align:center;padding:16px;color:var(--text-3)">Nenhuma arte no lote corresponde.</td></tr>`;
   } else if (filteredIndices.length) {
     if($("#batchRows")) {
       $("#batchRows").innerHTML = filteredIndices.map((index) => {
         const row = state.rows[index];
           return `<tr>
             <td><input type="checkbox" data-select-row="${index}" ${row.selected ? "checked" : ""} /></td>
+            <td>${status(row)}</td>
             <td>${batchThumbCell(row, index)}</td>
             <td title="${escapeHtml(row.path || "")}">${escapeHtml(row.fileName)}</td>
             <td>${cell(index, "id", row.id, editable, row)}</td>
@@ -1659,7 +1660,7 @@ function renderRows() {
       }).join("");
     }
   } else if ($("#batchRows")) {
-    $("#batchRows").innerHTML = `<tr><td colspan="8" class="batch-empty-cell">Nenhuma imagem carregada. Clique em Validar lote para ler a pasta configurada.</td></tr>`;
+    $("#batchRows").innerHTML = `<tr><td colspan="9" class="batch-empty-cell">Nenhuma imagem carregada. Clique em Validar lote para ler a pasta configurada.</td></tr>`;
   }
   bindBatchInputs();
   renderSummary();
