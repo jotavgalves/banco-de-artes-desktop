@@ -189,38 +189,42 @@ async function findLocalBackupImages(config, id, theme) {
   
   let idFolder = null;
 
-  // Tentativa rápida
+  // Tentativa rápida (caminho direto clássico)
   const quickPath = path.join(root, targetTheme, targetId);
   if (fs.existsSync(quickPath)) {
-    const stat = fs.statSync(quickPath);
-    if (stat.isDirectory()) {
-      idFolder = quickPath;
-    }
+    try {
+      if (fs.statSync(quickPath).isDirectory()) idFolder = quickPath;
+    } catch(e) {}
   }
 
-  // Fallback (1º nível)
+  // Fallback: Busca em largura (BFS) limitando profundidade
+  // Isso resolve casos onde a arte está em sub-sub-pastas (ex: PRINCESAS/ARIEL/131)
   if (!idFolder) {
-    const entries = fs.readdirSync(root, { withFileTypes: true });
-    for (const entry of entries) {
-      if (!entry.isDirectory()) continue;
-      if (compareStr(entry.name, targetTheme)) {
-        const potentialPath = path.join(root, entry.name, targetId);
-        if (fs.existsSync(potentialPath) && fs.statSync(potentialPath).isDirectory()) {
-          idFolder = potentialPath;
-          break;
-        }
-      }
-    }
+    const maxDepth = 3; 
+    let queue = [{ dir: root, depth: 0 }];
     
-    // Se ainda não encontrou iterando os nomes parecidos com o Tema, vamos olhar TODOS os temas
-    if (!idFolder) {
-      for (const entry of entries) {
-        if (!entry.isDirectory()) continue;
-        const potentialPath = path.join(root, entry.name, targetId);
-        if (fs.existsSync(potentialPath) && fs.statSync(potentialPath).isDirectory()) {
-          idFolder = potentialPath;
-          break;
-        }
+    while (queue.length > 0) {
+      const current = queue.shift();
+      
+      const targetPath = path.join(current.dir, targetId);
+      if (fs.existsSync(targetPath)) {
+        try {
+          if (fs.statSync(targetPath).isDirectory()) {
+            idFolder = targetPath;
+            break;
+          }
+        } catch (e) {}
+      }
+      
+      if (current.depth < maxDepth) {
+        try {
+          const entries = fs.readdirSync(current.dir, { withFileTypes: true });
+          for (const entry of entries) {
+            if (entry.isDirectory() && !isSystemEntry(entry.name)) {
+               queue.push({ dir: path.join(current.dir, entry.name), depth: current.depth + 1 });
+            }
+          }
+        } catch (e) {}
       }
     }
   }
