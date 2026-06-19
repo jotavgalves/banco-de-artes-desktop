@@ -402,27 +402,28 @@ async function runPanel50Batch(config, appRoot, payload = {}, actor = null, onPr
         item.error = "";
       }
     }
-    const rows = job.items
-      .filter((item) => item.status === "mockup_ok" && fs.existsSync(item.outputPath))
-      .map((item) => ({
-        id: item.id,
-        theme: theme.replace(/^\.\s+/, ""), // Remove o ". " antes de subir para a nuvem
-        product: targetProduct,
-        size: targetSize,
-        client: "",
-        phone: "",
-        fileName: path.basename(item.outputPath),
-        path: item.outputPath,
-      }));
-    if (rows.length) {
-      onProgress({
-        phase: "Upload",
-        current: 0,
-        total: rows.length,
-        detail: "Subindo mockups para Drive e Supabase.",
-      });
       const uploadConfig = { ...config, operatorName: actor?.name || config.operatorName };
-      const result = await googleService.uploadBatch(uploadConfig, appRoot, rows, onProgress, {
+      const rows = job.items
+        .filter((item) => item.status === "mockup_ok" && fs.existsSync(item.outputPath))
+        .map((item) => ({
+          id: item.id,
+          theme: theme.replace(/^\.\s+/, ""), // Remove o ". " antes de subir para a nuvem
+          product: targetProduct,
+          size: targetSize,
+          client: "",
+          phone: "",
+          user: uploadConfig.operatorName,
+          fileName: path.basename(item.outputPath),
+          path: item.outputPath,
+        }));
+      if (rows.length) {
+        onProgress({
+          phase: "Upload",
+          current: 0,
+          total: rows.length,
+          detail: "Subindo mockups para Drive e Supabase.",
+        });
+        const result = await googleService.uploadBatch(uploadConfig, appRoot, rows, onProgress, {
         persistArtwork: useSupabaseArtworks
           ? (artwork) => supabaseArtworkService.upsertImportedArtwork(uploadConfig, artwork)
           : null,
