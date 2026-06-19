@@ -2,7 +2,7 @@ const DEFAULT_GLOBAL_CONFIG = {
   operatorName: "Operador",
   credentialsPath: "",
   fixedDataFolder: "C:\\BancoDeArtes",
-  panel50SourceRoot: "",
+  panel50SourceRoot: "X:\\FESTAS E EVENTOS\\PAINEIS MARCKETPLACE\\SKUPR50 - PAINEIS REDONDOS 50 X 50\\SKUPR50 - IMPRESSÃO",
   panel50LastInputFolder: "",
   panel50OrganizedRoot: "X:\\1 - TEMAS ORGANIZADOS",
   panel50DriveLocalRoot: "X:\\2 - DRIVE",
