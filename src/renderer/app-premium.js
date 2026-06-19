@@ -993,7 +993,10 @@ function renderDriveFolders() {
       `).join("");
     };
 
-    const html = renderSection(bolinhas.rootFolderName || "BOLINHAS", bFolders) + renderSection(geral.rootFolderName || "GERAL", gFolders);
+    const bLabel = bolinhas.rootFolderName || "BOLINHAS";
+    const gLabel = (geral.rootFolderName && geral.rootFolderName.length > 20) ? "NOVO CATÁLOGO" : (geral.rootFolderName || "GERAL");
+    
+    const html = renderSection(bLabel, bFolders) + renderSection(gLabel, gFolders);
     
     $("#driveFolderList").innerHTML = html || `<div class="diagnostic-item"><strong>Nenhuma pasta de tema encontrada</strong><span>Use Sincronizar pastas para atualizar o cache do Drive.</span></div>`;
   }

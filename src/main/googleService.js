@@ -402,7 +402,7 @@ function driveFileIdFromUrl(url = "") {
 async function provision(config, appRoot) {
   const { drive } = await services(config, appRoot);
   const bolinhas = await findOrCreateFolder(drive, config.driveFolderBolinhas || "BOLINHAS 50X50");
-  const geral = await findOrCreateFolder(drive, config.driveFolderGeral || "PAINÉIS DE FESTA");
+  const geral = await findOrCreateFolder(drive, config.driveFolderGeral || "1poSJTWYybZB1kvRwBK4ZnpVTMtHCpUfE");
   return { config, driveFolderId: bolinhas };
 }
 
@@ -423,7 +423,7 @@ async function testConnectivity(config, appRoot) {
 
   try {
     const idBolinhas = await findOrCreateFolder(drive, config.driveFolderBolinhas || "BOLINHAS 50X50");
-    const idGeral = await findOrCreateFolder(drive, config.driveFolderGeral || "PAINÉIS DE FESTA");
+    const idGeral = await findOrCreateFolder(drive, config.driveFolderGeral || "1poSJTWYybZB1kvRwBK4ZnpVTMtHCpUfE");
     push("Pastas raízes", Boolean(idBolinhas && idGeral), "Acesso garantido às pastas raízes.");
   } catch (error) {
     push("Pastas raízes", false, error.message);
@@ -696,7 +696,7 @@ async function uploadBatch(config, appRoot, rows, onProgress = () => {}, options
 
 function getRootFolderName(config, product, size) {
   if (size === "50X50" && normalizeText(product) === "PAINEL REDONDO") return config.driveFolderBolinhas || "BOLINHAS 50X50";
-  return config.driveFolderGeral || "PAINÉIS DE FESTA";
+  return config.driveFolderGeral || "1poSJTWYybZB1kvRwBK4ZnpVTMtHCpUfE";
 }
 
 function getProductFolderName(product, size) {
@@ -800,7 +800,7 @@ async function findOrCreateFolder(drive, name, parentId = null) {
   if (cleanName.startsWith(". ")) {
     const withoutDot = cleanName.slice(2).trim();
     if (withoutDot) searchNames.push(withoutDot);
-  } else if (cleanName !== "SEM TEMA" && cleanName !== "BOLINHAS 50X50" && cleanName !== "PAINÉIS DE FESTA" && cleanName !== "OTHER") {
+  } else if (cleanName !== "SEM TEMA" && cleanName !== "BOLINHAS 50X50" && cleanName !== "1poSJTWYybZB1kvRwBK4ZnpVTMtHCpUfE" && cleanName !== "OTHER") {
     searchNames.push(". " + cleanName);
   }
 
@@ -1026,7 +1026,7 @@ function driveFolderPayload(config, cache) {
     },
     geral: {
       rootFolderId: cache.rootFolderIdGeral || "",
-      rootFolderName: config.driveFolderGeral || "PAINÉIS DE FESTA",
+      rootFolderName: config.driveFolderGeral || "1poSJTWYybZB1kvRwBK4ZnpVTMtHCpUfE",
       rootUrl: cache.rootFolderIdGeral ? driveFolderUrl(cache.rootFolderIdGeral) : "",
       folders: foldersGeral
     }
