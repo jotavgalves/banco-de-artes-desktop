@@ -11,7 +11,7 @@ const DEFAULT_GLOBAL_CONFIG = {
   sessionTimeoutMinutes: 10,
   reservationTtlMinutes: 5,
   driveFolderBolinhas: "BOLINHAS 50X50",
-  driveFolderGeral: "PAINÉIS DE FESTA",
+  driveFolderGeral: "1poSJTWYybZB1kvRwBK4ZnpVTMtHCpUfE",
   supabaseEnabled: false,
   supabaseUrl: "",
   supabasePublishableKey: "",

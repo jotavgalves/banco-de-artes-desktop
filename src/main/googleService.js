@@ -402,7 +402,7 @@ function driveFileIdFromUrl(url = "") {
 async function provision(config, appRoot) {
   const { drive } = await services(config, appRoot);
   const bolinhas = await findOrCreateFolder(drive, config.driveFolderBolinhas || "BOLINHAS 50X50");
-  const geral = await findOrCreateFolder(drive, config.driveFolderGeral || "1poSJTWYybZB1kvRwBK4ZnpVTMtHCpUfE");
+  const geral = await findOrCreateFolder(drive, (config.driveFolderGeral === "PAINÉIS DE FESTA" ? "1poSJTWYybZB1kvRwBK4ZnpVTMtHCpUfE" : config.driveFolderGeral || "1poSJTWYybZB1kvRwBK4ZnpVTMtHCpUfE"));
   return { config, driveFolderId: bolinhas };
 }
 
@@ -423,7 +423,7 @@ async function testConnectivity(config, appRoot) {
 
   try {
     const idBolinhas = await findOrCreateFolder(drive, config.driveFolderBolinhas || "BOLINHAS 50X50");
-    const idGeral = await findOrCreateFolder(drive, config.driveFolderGeral || "1poSJTWYybZB1kvRwBK4ZnpVTMtHCpUfE");
+    const idGeral = await findOrCreateFolder(drive, (config.driveFolderGeral === "PAINÉIS DE FESTA" ? "1poSJTWYybZB1kvRwBK4ZnpVTMtHCpUfE" : config.driveFolderGeral || "1poSJTWYybZB1kvRwBK4ZnpVTMtHCpUfE"));
     push("Pastas raízes", Boolean(idBolinhas && idGeral), "Acesso garantido às pastas raízes.");
   } catch (error) {
     push("Pastas raízes", false, error.message);
@@ -696,7 +696,7 @@ async function uploadBatch(config, appRoot, rows, onProgress = () => {}, options
 
 function getRootFolderName(config, product, size) {
   if (size === "50X50" && normalizeText(product) === "PAINEL REDONDO") return config.driveFolderBolinhas || "BOLINHAS 50X50";
-  return config.driveFolderGeral || "1poSJTWYybZB1kvRwBK4ZnpVTMtHCpUfE";
+  return (config.driveFolderGeral === "PAINÉIS DE FESTA" ? "1poSJTWYybZB1kvRwBK4ZnpVTMtHCpUfE" : config.driveFolderGeral || "1poSJTWYybZB1kvRwBK4ZnpVTMtHCpUfE");
 }
 
 function getProductFolderName(product, size) {
@@ -1026,7 +1026,7 @@ function driveFolderPayload(config, cache) {
     },
     geral: {
       rootFolderId: cache.rootFolderIdGeral || "",
-      rootFolderName: config.driveFolderGeral || "1poSJTWYybZB1kvRwBK4ZnpVTMtHCpUfE",
+      rootFolderName: (config.driveFolderGeral === "PAINÉIS DE FESTA" ? "1poSJTWYybZB1kvRwBK4ZnpVTMtHCpUfE" : config.driveFolderGeral || "1poSJTWYybZB1kvRwBK4ZnpVTMtHCpUfE"),
       rootUrl: cache.rootFolderIdGeral ? driveFolderUrl(cache.rootFolderIdGeral) : "",
       folders: foldersGeral
     }
