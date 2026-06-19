@@ -2,18 +2,35 @@
   "name": "banco-de-artes-desktop",
   "version": "0.1.0",
   "description": "Aplicativo desktop para cadastro e gestao de artes.",
+  "author": "Jotavgalves <contato@jotavgalves.com>",
   "main": "src/main/main.js",
   "scripts": {
     "start": "electron --disable-gpu --disable-http-cache .",
+    "pack": "electron-builder --win",
     "check": "npm run check:structure && npm run security-check && npm run preflight-check && npm run test:image-target",
     "check:structure": "node scripts/check.js",
     "security-check": "node scripts/security-check.js",
     "preflight-check": "node scripts/preflight-order-check.js",
     "test:image-target": "node scripts/test-image-target-validation.js"
   },
+  "build": {
+    "appId": "com.bancodeartes.desktop",
+    "productName": "Banco de Artes",
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": "nsis"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
+  },
   "dependencies": {
     "@supabase/supabase-js": "^2.107.0",
-    "electron": "^42.4.0",
     "googleapis": "^173.0.0",
     "image-size": "^2.0.2",
     "sharp": "^0.35.1",
@@ -21,6 +38,8 @@
     "ws": "^8.21.0"
   },
   "devDependencies": {
+    "electron": "^42.4.0",
+    "electron-builder": "^26.15.3",
     "jsdom": "^29.1.1"
   }
 }
