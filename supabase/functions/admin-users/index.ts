@@ -198,6 +198,7 @@ async function upsertProfile(client: ReturnType<typeof createClient>, input: {
     active: input.active,
     auth_user_id: input.authUserId,
     must_change_password: input.mustChangePassword,
+    deleted_at: null,
     updated_at: new Date().toISOString(),
   }, { onConflict: "login" });
   if (error) throw error;
